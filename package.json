@@ -1,0 +1,31 @@
+{
+  "name": "dwarf-fortress-production-oreder-manager",
+  "version": "1.0.0",
+  "description": "An improved interface to manage Dwarf Fortress's Fortress Mode production orders",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/GitAlbino/df-pom.git"
+  },
+  "keywords": [
+    "Dwarf",
+    "Fortress",
+    "Production",
+    "Order",
+    "Manager",
+    "Interface"
+  ],
+  "author": "Persat Sacha",
+  "license": "CC-BY-NC-4.0",
+  "bugs": {
+    "url": "https://github.com/GitAlbino/df-pom/issues"
+  },
+  "homepage": "https://github.com/GitAlbino/df-pom#readme",
+  "devDependencies": {
+    "electron": "^39.2.6"
+  }
+}

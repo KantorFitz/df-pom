@@ -1,0 +1,369 @@
+body {
+    font-family: monospace;
+    margin: 0;
+    padding: 40px 0 0 0;
+    background: #000;
+    font-size: 16px;
+    text-align: center;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+button {
+    background-color: #499;
+    border: none;
+    margin: 0 4px;
+    min-height: 23px;
+    min-width: 23px;
+    transition: 0.05s;
+    cursor: pointer;
+    line-height: 23px;
+
+    &:hover {
+        background-color: #5AA;
+    }
+}
+
+
+.tools {
+    position: fixed;
+    display: flex;
+    justify-content: center;
+    top: 0px;
+    left: 0px;
+    width: 100vw;
+    height: 50px;
+    background: #222;
+    padding: 10px;
+
+    button {
+        height: 100%;
+        margin: 0 3px;
+        line-height: normal;
+        font-size: 16px;
+    }
+
+    #autoRead,
+    #autoSave,
+    #pauseAll {
+        &.active {
+            background-color: #69C;
+        }
+    }
+}
+
+
+input {
+    position: absolute;
+    top: 0;
+    left: 0px;
+    width: 100%;
+    height: 100%;
+    max-width: 100%;
+    text-align: right;
+    border: none;
+    background: transparent;
+    font-family: monospace;
+    background: #366;
+    color: #DDD;
+    padding: 0 8px;
+}
+
+input.inputNumber::-webkit-outer-spin-button,
+input.inputNumber::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+}
+
+input[affectedprop="max_workshops"] {
+    color: #366;
+}
+
+.ordersTable {
+    display: inline-block;
+    width: auto;
+    margin: 30px 0;
+    background: #000;
+
+    .orderRow {
+        width: 1000px;
+        border-top: 1px #FFF1 solid;
+        display: flex;
+        align-items: center;
+        background-color: #222;
+
+        &:hover {
+            .property {
+                background-color: #444;
+            }
+
+            .toolZone {
+                background-color: #444;
+            }
+        }
+
+        &.header {
+            font-size: 80% !important;
+        }
+
+        &.head {
+            background: #333;
+        }
+
+        &.dragOver {
+            border-top: 1px #66F dashed;
+
+            & .property {
+                background-color: #338 !important;
+            }
+        }
+
+        &.pauseAll {
+            opacity: 0.6;
+        }
+
+        &.pauseFrom {
+            opacity: 0.6;
+
+            .btnStopAllAfter {
+                background: #FA3;
+            }
+        }
+
+        &.pauseOne {
+            opacity: 0.6;
+
+            .btnToggleMe {
+                background: #FA3;
+            }
+        }
+
+        .toolZone {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            order: 1000;
+            min-width: 205px;
+            height: 30px;
+
+            .rowTool.btnMax {
+                order: 970;
+            }
+
+            .rowTool.btnMin {
+                order: 980;
+            }
+
+            .rowTool.btnDuplicate {
+                order: 990;
+            }
+
+            .rowTool.btnDelete {
+                order: 1000;
+            }
+        }
+
+
+
+        .property {
+            position: relative;
+            overflow: hidden;
+            flex-basis: 40px;
+            flex-grow: 1;
+            overflow: hidden;
+            color: #AAA;
+            border-left: #333 1px solid;
+            border-right: #333 1px solid;
+            padding: 0 6px;
+            margin: 0 -1px;
+            height: 30px;
+            line-height: 30px;
+            background-color: #222;
+            overflow: hidden;
+
+
+            &.toggleable {
+                cursor: pointer;
+            }
+
+
+
+            &.isTrue {
+                background-color: #444;
+                color: #AAA;
+
+                &.toggleable {
+                    color: #CCC;
+                    background-color: #449;
+                }
+            }
+
+            &.isFalse {
+                background-color: #222;
+                color: #999;
+
+                &.toggleable {
+                    color: #AAA;
+                    background-color: #722;
+                }
+            }
+
+            &.id {
+                text-align: center;
+                order: 0;
+            }
+
+            &.job {
+                flex-basis: 260px;
+                order: 10;
+            }
+
+            &.amount_left {
+                flex-basis: 40px;
+                order: 30;
+                text-align: right;
+                max-width: 50px;
+            }
+
+            &.amount_total {
+                flex-basis: 40px;
+                order: 35;
+                text-align: right;
+                max-width: 50px;
+            }
+
+            &.max_workshops {
+                flex-basis: 40px;
+                order: 37;
+                text-align: right;
+                max-width: 50px;
+            }
+
+            &.item_subtype {
+                flex-basis: 200px;
+                order: 40;
+            }
+
+
+            &.material {
+                flex-basis: 200px;
+                order: 50;
+            }
+
+            &.material_category {
+                flex-basis: 80px;
+                order: 60;
+            }
+
+            &.frequency {
+                flex-basis: 65px;
+                order: 90;
+            }
+
+
+            &.item_conditions {
+                flex-basis: 140px;
+                order: 100;
+                overflow: visible;
+
+                &:hover {
+                    .conditionsContainer {
+                        display: block;
+                    }
+                }
+            }
+
+            &.is_validated {
+                text-align: center;
+                order: 110;
+                max-width: 40px;
+            }
+
+            &.is_active {
+                text-align: center;
+                order: 111;
+                max-width: 40px;
+            }
+
+
+        }
+
+        .conditionsContainer {
+            position: absolute;
+            display: none;
+            top: 100%;
+            right: 0;
+            line-height: 20px;
+            overflow: visible;
+            z-index: 10;
+
+            &:before {
+                content: "";
+                display: block;
+                position: absolute;
+                z-index: -1;
+                width: calc(100% + 10px);
+                height: calc(100% + 10px);
+                top: -5px;
+                left: -5px;
+                background: #333;
+            }
+
+            .condition {
+                margin: 2px 0;
+
+                .conditionPartsHost {
+                    display: flex;
+                    flex-wrap: nowrap;
+                    width: 100%;
+
+                    .conditionPart {
+                        position: relative;
+                        padding: 2px 4px;
+                        min-width: 30px;
+                        margin: 0 1px;
+                        background-color: #222;
+                        flex-grow: 1;
+                        text-align: center;
+                    }
+
+                    .cond_flags {
+                        order: 10;
+                    }
+
+                    .cond_material {
+                        order: 15;
+                    }
+
+                    .cond_item_type {
+                        order: 20;
+                    }
+
+                    .cond_item_subtype {
+                        order: 30;
+                    }
+
+                    .cond_condition {
+                        order: 40;
+                        max-width: 25px;
+                        min-width: 25px;
+                        font-size: 130%;
+                    }
+
+                    .cond_value {
+                        order: 50;
+                        max-width: 45px;
+                        min-width: 45px;
+                        text-align: right;
+                    }
+
+                    .cond_reaction_id {
+                        display: none;
+                    }
+                }
+            }
+
+        }
+    }
+}

@@ -1,0 +1,106 @@
+[
+  {
+    "amount_left": 4,
+    "amount_total": 5,
+    "frequency": "OneTime",
+    "id": 5,
+    "is_active": true,
+    "is_validated": true,
+    "item_subtype": "ITEM_TOOL_WHEELBARROW",
+    "job": "MakeTool",
+    "material_category": [
+      "wood"
+    ],
+    "item_conditions": [
+      {
+        "condition": "Not",
+        "item_subtype": "ENORMOUS_SUSPENDED_GONG_BI",
+        "item_type": "INSTRUMENT",
+        "value": 10
+      },
+      {
+        "condition": "AtLeast",
+        "flags": [
+          "empty",
+          "ammo"
+        ],
+        "item_type": "ARMOR",
+        "material": "CREATURE:AARDVARK:HAIR",
+        "reaction_id": "ASSEMBLE_ENORMOUS_SUSPENDED_GONG_BI",
+        "value": 10
+      },
+      {
+        "condition": "AtMost",
+        "item_subtype": "PART_ENORMOUS_GONG_BI",
+        "item_type": "TOOL",
+        "reaction_id": "ASSEMBLE_ENORMOUS_SUSPENDED_GONG_BI",
+        "value": 99
+      },
+      {
+        "condition": "GreaterThan",
+        "item_subtype": "PART_ENORMOUS_GONG_FRAME_BI",
+        "item_type": "TOOL",
+        "reaction_id": "ASSEMBLE_ENORMOUS_SUSPENDED_GONG_BI",
+        "value": 10
+      },
+      {
+        "condition": "LessThan",
+        "item_subtype": "PART_ENORMOUS_GONG_MALLET_BI",
+        "item_type": "TOOL",
+        "reaction_id": "ASSEMBLE_ENORMOUS_SUSPENDED_GONG_BI",
+        "value": 23
+      },
+      {
+        "condition": "Exactly",
+        "value": 0
+      }
+    ]
+  },
+  {
+    "amount_left": 444,
+    "amount_total": 10,
+    "frequency": "OneTime",
+    "id": 0,
+    "is_active": true,
+    "is_validated": true,
+    "job": "ConstructBed",
+    "material_category": [
+      "wood"
+    ]
+  },
+  {
+    "amount_left": 4,
+    "amount_total": 10,
+    "frequency": "OneTime",
+    "id": 1,
+    "is_active": true,
+    "is_validated": true,
+    "job": "ConstructDoor",
+    "material": "PLANT:HAZEL:WOOD",
+    "material_category": [
+      "wood"
+    ]
+  },
+  {
+    "amount_left": 1,
+    "amount_total": 7,
+    "frequency": "OneTime",
+    "id": 4,
+    "is_active": true,
+    "is_validated": true,
+    "job": "MakeBucket",
+    "material_category": [
+      "wood"
+    ]
+  },
+  {
+    "amount_left": 10,
+    "amount_total": 10,
+    "frequency": "Daily",
+    "id": 6,
+    "is_active": false,
+    "is_validated": true,
+    "job": "CustomReaction",
+    "reaction": "ASSEMBLE_ENORMOUS_SUSPENDED_GONG_BI"
+  }
+]

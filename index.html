@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<title>Dwarf Fortress Work Orders Manager</title>
+
+<head>
+<link rel="stylesheet" href="style.css">
+<script src="/ordersdata.js"></script>
+<script src="/manager.js"></script>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+</head>
+
+<body>
+	<div class="tools">
+		<button id="addOrderBtn" onclick="MarkForRead(true)">READ FILE</button>
+		<button id="addOrderBtn" onclick="MarkForSave(true)">SAVE FILE</button>
+		<button id="autoRead" onclick="ToggleAutoRead()">AUTOREAD: OFF</button>
+		<button id="autoSave" onclick="ToggleAutoSave()">AUTOSAVE: OFF</button>
+		<button id="pauseAll" onclick="PauseAllTasks()">PAUSE ALL: OFF</button>
+	</div>
+
+	<div class="ordersTable">
+		<div class='orderRow head'>
+			<div class="cell"></div>
+		</div>
+	</div>
+</body>
+
+</html>

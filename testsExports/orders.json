@@ -1,0 +1,1006 @@
+[
+  {
+    "amount_left" : 20,
+    "amount_total" : 20,
+    "frequency" : "Daily",
+    "id" : 203,
+    "is_active" : false,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "LessThan",
+        "item_type" : "BLOCKS",
+        "material" : "INORGANIC:IRON",
+        "value" : 50
+      }
+    ],
+    "job" : "ConstructBlocks",
+    "material" : "INORGANIC:IRON"
+  },
+  {
+    "amount_left" : 6,
+    "amount_total" : 10,
+    "frequency" : "Daily",
+    "id" : 19,
+    "is_active" : true,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "LessThan",
+        "item_type" : "DOOR",
+        "material" : "INORGANIC",
+        "value" : 15
+      }
+    ],
+    "job" : "ConstructDoor",
+    "material" : "INORGANIC"
+  },
+  {
+    "amount_left" : 2,
+    "amount_total" : 10,
+    "frequency" : "Daily",
+    "id" : 16,
+    "is_active" : true,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "GreaterThan",
+        "flags" : 
+        [
+          "unrotten"
+        ],
+        "item_type" : "PLANT_GROWTH",
+        "reaction_id" : "BREW_DRINK_FROM_PLANT_GROWTH",
+        "reaction_product" : "DRINK_MAT",
+        "value" : 10
+      },
+      {
+        "condition" : "GreaterThan",
+        "flags" : 
+        [
+          "empty",
+          "food_storage"
+        ],
+        "reaction_id" : "BREW_DRINK_FROM_PLANT_GROWTH",
+        "value" : 10
+      },
+      {
+        "condition" : "LessThan",
+        "item_type" : "DRINK",
+        "value" : 1500
+      }
+    ],
+    "job" : "CustomReaction",
+    "reaction" : "BREW_DRINK_FROM_PLANT_GROWTH"
+  },
+  {
+    "amount_left" : 10,
+    "amount_total" : 10,
+    "frequency" : "Daily",
+    "id" : 17,
+    "is_active" : false,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "LessThan",
+        "item_type" : "DRINK",
+        "value" : 1500
+      },
+      {
+        "condition" : "GreaterThan",
+        "flags" : 
+        [
+          "unrotten"
+        ],
+        "item_type" : "PLANT",
+        "reaction_id" : "BREW_DRINK_FROM_PLANT",
+        "reaction_product" : "DRINK_MAT",
+        "value" : 10
+      },
+      {
+        "condition" : "GreaterThan",
+        "flags" : 
+        [
+          "empty",
+          "food_storage"
+        ],
+        "reaction_id" : "BREW_DRINK_FROM_PLANT",
+        "value" : 10
+      }
+    ],
+    "job" : "CustomReaction",
+    "reaction" : "BREW_DRINK_FROM_PLANT"
+  },
+  {
+    "amount_left" : 10,
+    "amount_total" : 10,
+    "frequency" : "Daily",
+    "id" : 15,
+    "is_active" : false,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "LessThan",
+        "flags" : 
+        [
+          "empty"
+        ],
+        "item_subtype" : "ITEM_TOOL_JUG",
+        "item_type" : "TOOL",
+        "material" : "INORGANIC",
+        "value" : 20
+      }
+    ],
+    "item_subtype" : "ITEM_TOOL_JUG",
+    "job" : "MakeTool",
+    "material" : "INORGANIC"
+  },
+  {
+    "amount_left" : 2,
+    "amount_total" : 5,
+    "frequency" : "Daily",
+    "id" : 0,
+    "is_active" : true,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "LessThan",
+        "item_type" : "BED",
+        "value" : 20
+      }
+    ],
+    "job" : "ConstructBed",
+    "material_category" : 
+    [
+      "wood"
+    ]
+  },
+  {
+    "amount_left" : 10,
+    "amount_total" : 10,
+    "frequency" : "Daily",
+    "id" : 5,
+    "is_active" : false,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "LessThan",
+        "flags" : 
+        [
+          "empty"
+        ],
+        "item_type" : "BOX",
+        "material" : "INORGANIC",
+        "value" : 10
+      }
+    ],
+    "job" : "ConstructChest",
+    "material" : "INORGANIC"
+  },
+  {
+    "amount_left" : 3,
+    "amount_total" : 10,
+    "frequency" : "Daily",
+    "id" : 6,
+    "is_active" : true,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "LessThan",
+        "item_type" : "CABINET",
+        "material" : "INORGANIC",
+        "value" : 10
+      }
+    ],
+    "job" : "ConstructCabinet",
+    "material" : "INORGANIC"
+  },
+  {
+    "amount_left" : 10,
+    "amount_total" : 10,
+    "frequency" : "Daily",
+    "id" : 7,
+    "is_active" : false,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "LessThan",
+        "item_type" : "TABLE",
+        "material" : "INORGANIC",
+        "value" : 10
+      }
+    ],
+    "job" : "ConstructTable",
+    "material" : "INORGANIC"
+  },
+  {
+    "amount_left" : 10,
+    "amount_total" : 10,
+    "frequency" : "Daily",
+    "id" : 11,
+    "is_active" : false,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "LessThan",
+        "flags" : 
+        [
+          "empty"
+        ],
+        "item_type" : "BUCKET",
+        "value" : 15
+      }
+    ],
+    "job" : "MakeBucket",
+    "material_category" : 
+    [
+      "wood"
+    ]
+  },
+  {
+    "amount_left" : 10,
+    "amount_total" : 10,
+    "frequency" : "Daily",
+    "id" : 12,
+    "is_active" : false,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "LessThan",
+        "flags" : 
+        [
+          "empty"
+        ],
+        "item_subtype" : "ITEM_TOOL_WHEELBARROW",
+        "item_type" : "TOOL",
+        "value" : 25
+      }
+    ],
+    "item_subtype" : "ITEM_TOOL_WHEELBARROW",
+    "job" : "MakeTool",
+    "material_category" : 
+    [
+      "wood"
+    ]
+  },
+  {
+    "amount_left" : 2,
+    "amount_total" : 5,
+    "frequency" : "Daily",
+    "id" : 13,
+    "is_active" : true,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "LessThan",
+        "item_type" : "STATUE",
+        "material" : "INORGANIC",
+        "value" : 10
+      }
+    ],
+    "job" : "ConstructStatue",
+    "material" : "INORGANIC"
+  },
+  {
+    "amount_left" : 10,
+    "amount_total" : 10,
+    "frequency" : "Daily",
+    "id" : 14,
+    "is_active" : false,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "LessThan",
+        "flags" : 
+        [
+          "empty"
+        ],
+        "item_type" : "GOBLET",
+        "material" : "INORGANIC",
+        "value" : 20
+      }
+    ],
+    "job" : "MakeGoblet",
+    "material" : "INORGANIC"
+  },
+  {
+    "amount_left" : 10,
+    "amount_total" : 10,
+    "frequency" : "Daily",
+    "id" : 20,
+    "is_active" : false,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "GreaterThan",
+        "item_type" : "WOOD",
+        "value" : 20
+      },
+      {
+        "condition" : "LessThan",
+        "item_type" : "BAR",
+        "material" : "COAL",
+        "value" : 20
+      }
+    ],
+    "job" : "MakeCharcoal"
+  },
+  {
+    "amount_left" : 20,
+    "amount_total" : 20,
+    "frequency" : "Daily",
+    "id" : 21,
+    "is_active" : false,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "GreaterThan",
+        "item_type" : "BOULDER",
+        "material" : "INORGANIC:COAL_BITUMINOUS",
+        "reaction_id" : "BITUMINOUS_COAL_TO_COKE",
+        "value" : 10
+      }
+    ],
+    "job" : "CustomReaction",
+    "reaction" : "BITUMINOUS_COAL_TO_COKE"
+  },
+  {
+    "amount_left" : 3,
+    "amount_total" : 10,
+    "frequency" : "Daily",
+    "id" : 18,
+    "is_active" : true,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "GreaterThan",
+        "flags" : 
+        [
+          "unrotten",
+          "bone",
+          "body_part"
+        ],
+        "value" : 20
+      }
+    ],
+    "job" : "MakeCrafts",
+    "material_category" : 
+    [
+      "bone"
+    ]
+  },
+  {
+    "amount_left" : 10,
+    "amount_total" : 10,
+    "frequency" : "Daily",
+    "id" : 22,
+    "is_active" : false,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "LessThan",
+        "item_type" : "FLOODGATE",
+        "material" : "INORGANIC",
+        "value" : 10
+      }
+    ],
+    "job" : "ConstructFloodgate",
+    "material" : "INORGANIC"
+  },
+  {
+    "amount_left" : 10,
+    "amount_total" : 10,
+    "frequency" : "Daily",
+    "id" : 23,
+    "is_active" : false,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "LessThan",
+        "item_type" : "GRATE",
+        "material" : "INORGANIC",
+        "value" : 10
+      }
+    ],
+    "job" : "ConstructGrate",
+    "material" : "INORGANIC"
+  },
+  {
+    "amount_left" : 5,
+    "amount_total" : 5,
+    "frequency" : "Daily",
+    "id" : 25,
+    "is_active" : false,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "LessThan",
+        "item_type" : "HATCH_COVER",
+        "material" : "INORGANIC",
+        "value" : 10
+      }
+    ],
+    "job" : "ConstructHatchCover",
+    "material" : "INORGANIC"
+  },
+  {
+    "amount_left" : 10,
+    "amount_total" : 10,
+    "frequency" : "Daily",
+    "id" : 30,
+    "is_active" : false,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "LessThan",
+        "flags" : 
+        [
+          "empty"
+        ],
+        "item_type" : "COFFIN",
+        "material" : "INORGANIC",
+        "value" : 5
+      }
+    ],
+    "job" : "ConstructCoffin",
+    "material" : "INORGANIC"
+  },
+  {
+    "amount_left" : 18,
+    "amount_total" : 20,
+    "frequency" : "Daily",
+    "id" : 32,
+    "is_active" : true,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "GreaterThan",
+        "flags" : 
+        [
+          "unrotten",
+          "cookable",
+          "solid"
+        ],
+        "value" : 20
+      },
+      {
+        "condition" : "GreaterThan",
+        "flags" : 
+        [
+          "unrotten",
+          "cookable"
+        ],
+        "value" : 20
+      }
+    ],
+    "job" : "PrepareMeal",
+    "meal_ingredients" : 4
+  },
+  {
+    "amount_left" : 20,
+    "amount_total" : 20,
+    "frequency" : "Daily",
+    "id" : 33,
+    "is_active" : false,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "LessThan",
+        "flags" : 
+        [
+          "empty"
+        ],
+        "item_subtype" : "ITEM_TOOL_LARGE_POT",
+        "item_type" : "TOOL",
+        "material" : "INORGANIC",
+        "value" : 40
+      }
+    ],
+    "item_subtype" : "ITEM_TOOL_LARGE_POT",
+    "job" : "MakeTool",
+    "material" : "INORGANIC"
+  },
+  {
+    "amount_left" : 10,
+    "amount_total" : 10,
+    "frequency" : "Daily",
+    "id" : 35,
+    "is_active" : false,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "LessThan",
+        "item_subtype" : "ITEM_TOOL_PEDESTAL",
+        "item_type" : "TOOL",
+        "material" : "INORGANIC",
+        "value" : 10
+      }
+    ],
+    "item_subtype" : "ITEM_TOOL_PEDESTAL",
+    "job" : "MakeTool",
+    "material" : "INORGANIC"
+  },
+  {
+    "amount_left" : 10,
+    "amount_total" : 10,
+    "frequency" : "Daily",
+    "id" : 37,
+    "is_active" : false,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "LessThan",
+        "flags" : 
+        [
+          "empty"
+        ],
+        "item_type" : "ARMORSTAND",
+        "material" : "INORGANIC:IRON",
+        "value" : 10
+      }
+    ],
+    "job" : "ConstructArmorStand",
+    "material" : "INORGANIC:IRON"
+  },
+  {
+    "amount_left" : 10,
+    "amount_total" : 10,
+    "frequency" : "Daily",
+    "id" : 38,
+    "is_active" : false,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "LessThan",
+        "flags" : 
+        [
+          "empty"
+        ],
+        "item_type" : "WEAPONRACK",
+        "material" : "INORGANIC:IRON",
+        "value" : 10
+      }
+    ],
+    "job" : "ConstructWeaponRack",
+    "material" : "INORGANIC:IRON"
+  },
+  {
+    "amount_left" : 10,
+    "amount_total" : 10,
+    "frequency" : "Daily",
+    "id" : 66,
+    "is_active" : true,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "GreaterThan",
+        "flags" : 
+        [
+          "unrotten",
+          "bone",
+          "body_part"
+        ],
+        "value" : 30
+      }
+    ],
+    "job" : "MakeCrafts",
+    "material_category" : 
+    [
+      "bone"
+    ]
+  },
+  {
+    "amount_left" : 10,
+    "amount_total" : 10,
+    "frequency" : "Daily",
+    "id" : 67,
+    "is_active" : true,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "GreaterThan",
+        "flags" : 
+        [
+          "non_economic",
+          "hard"
+        ],
+        "item_type" : "BOULDER",
+        "material" : "INORGANIC",
+        "value" : 30
+      }
+    ],
+    "job" : "MakeCrafts",
+    "material" : "INORGANIC"
+  },
+  {
+    "amount_left" : 1,
+    "amount_total" : 10,
+    "frequency" : "Daily",
+    "id" : 68,
+    "is_active" : true,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "GreaterThan",
+        "item_type" : "BAR",
+        "material" : "INORGANIC:IRON",
+        "min_dimension" : 150,
+        "value" : 30
+      }
+    ],
+    "job" : "MakeCrafts",
+    "material" : "INORGANIC:IRON"
+  },
+  {
+    "amount_left" : 50,
+    "amount_total" : 50,
+    "frequency" : "Daily",
+    "id" : 69,
+    "is_active" : false,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "LessThan",
+        "item_subtype" : "ITEM_AMMO_BOLTS",
+        "item_type" : "AMMO",
+        "value" : 200
+      },
+      {
+        "condition" : "GreaterThan",
+        "item_type" : "WOOD",
+        "value" : 20
+      }
+    ],
+    "item_subtype" : "ITEM_AMMO_BOLTS",
+    "job" : "MakeAmmo",
+    "material_category" : 
+    [
+      "wood"
+    ]
+  },
+  {
+    "amount_left" : 10,
+    "amount_total" : 10,
+    "frequency" : "Daily",
+    "id" : 82,
+    "is_active" : false,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "GreaterThan",
+        "flags" : 
+        [
+          "gem"
+        ],
+        "item_type" : "ROUGH",
+        "value" : 10
+      }
+    ],
+    "job" : "CutGems"
+  },
+  {
+    "amount_left" : 10,
+    "amount_total" : 10,
+    "frequency" : "Daily",
+    "id" : 83,
+    "is_active" : true,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "GreaterThan",
+        "flags" : 
+        [
+          "non_economic",
+          "hard"
+        ],
+        "item_type" : "BOULDER",
+        "material" : "INORGANIC",
+        "value" : 50
+      }
+    ],
+    "job" : "MakeCrafts",
+    "material" : "INORGANIC"
+  },
+  {
+    "amount_left" : 10,
+    "amount_total" : 10,
+    "frequency" : "Daily",
+    "id" : 84,
+    "is_active" : true,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "GreaterThan",
+        "flags" : 
+        [
+          "unrotten",
+          "body_part"
+        ],
+        "reaction_id" : "TAN_A_HIDE",
+        "reaction_product" : "TAN_MAT",
+        "value" : 10
+      }
+    ],
+    "job" : "CustomReaction",
+    "reaction" : "TAN_A_HIDE"
+  },
+  {
+    "amount_left" : 20,
+    "amount_total" : 20,
+    "frequency" : "Daily",
+    "id" : 94,
+    "is_active" : false,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "LessThan",
+        "flags" : 
+        [
+          "empty"
+        ],
+        "item_type" : "BIN",
+        "material" : "INORGANIC:IRON",
+        "value" : 30
+      }
+    ],
+    "job" : "ConstructBin",
+    "material" : "INORGANIC:IRON"
+  },
+  {
+    "amount_left" : 45,
+    "amount_total" : 50,
+    "frequency" : "Daily",
+    "id" : 95,
+    "is_active" : true,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "GreaterThan",
+        "flags" : 
+        [
+          "non_economic",
+          "hard"
+        ],
+        "item_type" : "BOULDER",
+        "material" : "INORGANIC",
+        "value" : 75
+      }
+    ],
+    "job" : "ConstructBlocks",
+    "material" : "INORGANIC"
+  },
+  {
+    "amount_left" : 10,
+    "amount_total" : 10,
+    "frequency" : "Daily",
+    "id" : 102,
+    "is_active" : true,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "GreaterThan",
+        "flags" : 
+        [
+          "unrotten",
+          "shell",
+          "body_part"
+        ],
+        "value" : 10
+      }
+    ],
+    "job" : "MakeCrafts",
+    "material_category" : 
+    [
+      "shell"
+    ]
+  },
+  {
+    "amount_left" : 50,
+    "amount_total" : 50,
+    "frequency" : "Daily",
+    "id" : 112,
+    "is_active" : false,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "LessThan",
+        "item_subtype" : "ITEM_AMMO_BOLTS",
+        "item_type" : "AMMO",
+        "material" : "INORGANIC:IRON",
+        "value" : 150
+      }
+    ],
+    "item_subtype" : "ITEM_AMMO_BOLTS",
+    "job" : "MakeAmmo",
+    "material" : "INORGANIC:IRON"
+  },
+  {
+    "amount_left" : 10,
+    "amount_total" : 10,
+    "frequency" : "Daily",
+    "id" : 113,
+    "is_active" : false,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "LessThan",
+        "item_subtype" : "ITEM_AMMO_BOLTS",
+        "item_type" : "AMMO",
+        "material" : "INORGANIC:COPPER",
+        "value" : 150
+      }
+    ],
+    "item_subtype" : "ITEM_AMMO_BOLTS",
+    "job" : "MakeAmmo",
+    "material" : "INORGANIC:COPPER"
+  },
+  {
+    "amount_left" : 15,
+    "amount_total" : 15,
+    "frequency" : "Daily",
+    "id" : 141,
+    "is_active" : false,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "LessThan",
+        "item_type" : "TRAPPARTS",
+        "material" : "INORGANIC",
+        "value" : 20
+      }
+    ],
+    "job" : "ConstructMechanisms",
+    "material" : "INORGANIC"
+  },
+  {
+    "amount_left" : 20,
+    "amount_total" : 20,
+    "frequency" : "Daily",
+    "id" : 165,
+    "is_active" : false,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "LessThan",
+        "flags" : 
+        [
+          "empty"
+        ],
+        "item_type" : "BIN",
+        "material" : "INORGANIC:COPPER",
+        "value" : 20
+      }
+    ],
+    "job" : "ConstructBin",
+    "material" : "INORGANIC:COPPER"
+  },
+  {
+    "amount_left" : 10,
+    "amount_total" : 10,
+    "frequency" : "Daily",
+    "id" : 193,
+    "is_active" : false,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "GreaterThan",
+        "flags" : 
+        [
+          "unrotten",
+          "milk"
+        ],
+        "value" : 10
+      }
+    ],
+    "job" : "MakeCheese"
+  },
+  {
+    "amount_left" : 10,
+    "amount_total" : 10,
+    "frequency" : "Daily",
+    "id" : 194,
+    "is_active" : false,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "LessThan",
+        "flags" : 
+        [
+          "empty"
+        ],
+        "item_type" : "BIN",
+        "material" : "INORGANIC:LEAD",
+        "value" : 20
+      }
+    ],
+    "job" : "ConstructBin",
+    "material" : "INORGANIC:LEAD",
+    "workshop_id" : 1260
+  },
+  {
+    "amount_left" : 4,
+    "amount_total" : 10,
+    "frequency" : "Daily",
+    "id" : 200,
+    "is_active" : true,
+    "is_validated" : true,
+    "item_conditions" : 
+    [
+      {
+        "condition" : "LessThan",
+        "flags" : 
+        [
+          "empty"
+        ],
+        "item_type" : "BIN",
+        "material" : "INORGANIC:IRON",
+        "value" : 20
+      }
+    ],
+    "job" : "ConstructBin",
+    "material" : "INORGANIC:IRON",
+    "workshop_id" : 4214
+  },
+  {
+    "amount_left" : 22,
+    "amount_total" : 30,
+    "frequency" : "Daily",
+    "id" : 206,
+    "is_active" : true,
+    "is_validated" : true,
+    "job" : "CustomReaction",
+    "reaction" : "BITUMINOUS_COAL_TO_COKE",
+    "workshop_id" : 1220
+  },
+  {
+    "amount_left" : 10,
+    "amount_total" : 10,
+    "frequency" : "OneTime",
+    "id" : 207,
+    "is_active" : false,
+    "is_validated" : false,
+    "job" : "SmeltOre",
+    "material" : "INORGANIC:GARNIERITE"
+  }
+]

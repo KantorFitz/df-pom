@@ -1,0 +1,55 @@
+[
+	{
+		"amount_left" : 4,
+		"amount_total" : 10,
+		"frequency" : "OneTime",
+		"id" : 0,
+		"is_active" : true,
+		"is_validated" : true,
+		"job" : "ConstructBed",
+		"material_category" : 
+		[
+			"wood"
+		]
+	},
+	{
+		"amount_left" : 4,
+		"amount_total" : 10,
+		"frequency" : "OneTime",
+		"id" : 1,
+		"is_active" : true,
+		"is_validated" : true,
+		"job" : "ConstructDoor",
+		"material_category" : 
+		[
+			"wood"
+		]
+	},
+	{
+		"amount_left" : 1,
+		"amount_total" : 7,
+		"frequency" : "OneTime",
+		"id" : 4,
+		"is_active" : true,
+		"is_validated" : true,
+		"job" : "MakeBucket",
+		"material_category" : 
+		[
+			"wood"
+		]
+	},
+	{
+		"amount_left" : 4,
+		"amount_total" : 5,
+		"frequency" : "OneTime",
+		"id" : 5,
+		"is_active" : true,
+		"is_validated" : true,
+		"item_subtype" : "ITEM_TOOL_WHEELBARROW",
+		"job" : "MakeTool",
+		"material_category" : 
+		[
+			"wood"
+		]
+	}
+]
