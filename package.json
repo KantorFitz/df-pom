@@ -1,5 +1,5 @@
 {
-  "name": "dwarf-fortress-production-oreder-manager",
+  "name": "dwarf-fortress-production-orders-manager",
   "version": "1.0.0",
   "description": "An improved interface to manage Dwarf Fortress's Fortress Mode production orders",
   "main": "main.js",
@@ -27,5 +27,9 @@
   "homepage": "https://github.com/GitAlbino/df-pom#readme",
   "devDependencies": {
     "electron": "^39.2.6"
+  },
+  "dependencies": {
+    "fuse.js": "^7.1.0",
+    "node": "^20.19.6"
   }
 }

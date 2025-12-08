@@ -3,24 +3,117 @@
 <title>Dwarf Fortress Work Orders Manager</title>
 
 <head>
-<link rel="stylesheet" href="style.css">
-<script src="/ordersdata.js"></script>
-<script src="/manager.js"></script>
-<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+	<meta http-equiv="Content-Security-Policy"
+		content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';">
+	<link rel="stylesheet" href="style.css">
+	<script src="node_modules/fuse.js/dist/fuse.js"></script>
+	<script src="ordersdata.js"></script>
+	<script src="manager.js"></script>
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
 </head>
 
 <body>
-	<div class="tools">
-		<button id="addOrderBtn" onclick="MarkForRead(true)">READ FILE</button>
-		<button id="addOrderBtn" onclick="MarkForSave(true)">SAVE FILE</button>
-		<button id="autoRead" onclick="ToggleAutoRead()">AUTOREAD: OFF</button>
-		<button id="autoSave" onclick="ToggleAutoSave()">AUTOSAVE: OFF</button>
-		<button id="pauseAll" onclick="PauseAllTasks()">PAUSE ALL: OFF</button>
-	</div>
+	<div class="content">
+		<div class="contentHead">
+			<div class="tools">
+				<button id="openFile" onclick="OpenFile()">SELECT ORDERS FILE</button>
+				<div class="sep"> </div>
+				<label><span>&#9658;</span><button id="readOrders" onclick="ReadOrders()">READ</button></label>
+				<button id="autoRead" onclick="ToggleAutoRead()">AUTOREAD: OFF</button>
+				<div class="sep"> </div>
+				<label><span>&#128427;</span><button id="saveOrders" onclick="MarkForSave()">SAVE</button></label>
+				<button id="autoSave" onclick="ToggleAutoSave()">AUTOSAVE: OFF</button>
+				<div class="sep"> </div>
+				<label><span>&#9208;</span><button id="pauseAll" onclick="PauseAllTasks()">PAUSE ALL:
+						OFF</button></label>
+				<div class="sep"> </div>
+				<label><span>&#10624;</span><button id="extraCols" onclick="ToggleCompact()">COMPACT:
+						OFF</button></label>
+				<div class="sep"> </div>
+				<label><span>+</span><button id="addOrder" onclick="CreateNewOrder()">ADD ORDER</button></label>
+			</div>
+		</div>
 
-	<div class="ordersTable">
-		<div class='orderRow head'>
-			<div class="cell"></div>
+		<div class='contentBody'>
+			<div class="ordersTable">
+				<div class='orderRow head'>
+					<div class="cell"></div>
+				</div>
+			</div>
+
+			<div class="conditionEditor hidden" onclick="event.stopPropagation();">
+				<h3>Production Condition</h3>
+				<label for="itemType"> <span>Item</span> <input onchange="ConditionEdited(this)" type="text"
+						id="itemType" onfocus="SetAutoFill(this,'itemTypes')" property="item_type"
+						onblur="CloseAutoFill(this)" />
+					<div class="autocompleteList"></div>
+				</label>
+				<label for="itemFlag"><span>Flag</span><input onchange="ConditionEdited(this)" type="text" id="itemFlag"
+						onfocus="SetAutoFill(this,'flags',true)" property="flags" onblur="CloseAutoFill(this)" />
+					<div class="autocompleteList"></div>
+				</label>
+				<label for="itemMaterial"><span>Material</span><input onchange="ConditionEdited(this)" type="text"
+						id="itemMaterial" onfocus="SetAutoFill(this,'materials')" property="material"
+						onblur="CloseAutoFill(this)" />
+					<div class="autocompleteList"></div>
+				</label>
+				<label for="itemReactable"><span>Used for</span><input onchange="ConditionEdited(this)" type="text"
+						id="itemReactable" onfocus="SetAutoFill(this,'reactions')" property="reaction_product"
+						onblur="CloseAutoFill(this)" />
+					<div class="autocompleteList"></div>
+				</label>
+
+				<label for="operator"><span>Comparison</span>
+					<select id="operator" onchange="ConditionEdited(this)" property="condition">
+						<option value="LessThan">&lt;</option>
+						<option value="AtMost">&lt;=</option>
+						<option value="Exactly">==</option>
+						<option value="Not">!=</option>
+						<option value="AtLeast">&gt;=</option>
+						<option value="GreaterThan">&gt;</option>
+					</select>
+					<input type="number" id="conditionValue" value="0" onchange="ConditionEdited(this)"
+						property="value" />
+				</label>
+			</div>
+
+
+			<div class="orderEditor hidden" onclick="event.stopPropagation();">
+				<h3>Production Order</h3>
+				<label for="itemType"> <span>Item</span> <input onchange="ConditionEdited(this)" type="text"
+						id="itemType" onfocus="SetAutoFill(this,'itemTypes')" property="item_type"
+						onblur="CloseAutoFill(this)" />
+					<div class="autocompleteList"></div>
+				</label>
+				<label for="itemFlag"><span>Flag</span><input onchange="ConditionEdited(this)" type="text" id="itemFlag"
+						onfocus="SetAutoFill(this,'flags',true)" property="flags" onblur="CloseAutoFill(this)" />
+					<div class="autocompleteList"></div>
+				</label>
+				<label for="itemMaterial"><span>Material</span><input onchange="ConditionEdited(this)" type="text"
+						id="itemMaterial" onfocus="SetAutoFill(this,'materials')" property="material"
+						onblur="CloseAutoFill(this)" />
+					<div class="autocompleteList"></div>
+				</label>
+				<label for="itemReactable"><span>Used for</span><input onchange="ConditionEdited(this)" type="text"
+						id="itemReactable" onfocus="SetAutoFill(this,'reactions')" property="reaction_product"
+						onblur="CloseAutoFill(this)" />
+					<div class="autocompleteList"></div>
+				</label>
+
+				<label for="operator"><span>Comparison</span>
+					<select id="operator" onchange="ConditionEdited(this)" property="condition">
+						<option value="LessThan">&lt;</option>
+						<option value="AtMost">&lt;=</option>
+						<option value="Exactly">==</option>
+						<option value="Not">!=</option>
+						<option value="AtLeast">&gt;=</option>
+						<option value="GreaterThan">&gt;</option>
+					</select>
+					<input type="number" id="conditionValue" value="0" onchange="ConditionEdited(this)"
+						property="value" />
+				</label>
+			</div>
+
 		</div>
 	</div>
 </body>

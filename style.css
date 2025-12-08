@@ -1,14 +1,29 @@
-body {
-    font-family: monospace;
-    margin: 0;
-    padding: 40px 0 0 0;
-    background: #000;
-    font-size: 16px;
-    text-align: center;
+html {
+    height: 100%;
+    width: 100%;
 }
 
 * {
     box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: monospace;
+    background: #000;
+    font-size: 16px;
+    text-align: center;
+
+    &.noFileSelected {
+        .tools *:not(#openFile) {
+            display: none !important;
+        }
+    }
+}
+
+.hidden {
+    display: none !important;
 }
 
 button {
@@ -24,52 +39,127 @@ button {
     &:hover {
         background-color: #5AA;
     }
+
+    &.btnDelete {
+        background-color: #944;
+        font-size: 14px;
+        line-height: 20px;
+        padding: 0;
+
+        &:hover {
+            background-color: #B66;
+        }
+    }
+
+}
+
+.compactMode {
+    .comp {
+        display: none !important;
+    }
+
+    .toolZone {
+        flex-basis: 128px !important;
+        min-width: 128px !important;
+        max-width: 128px !important;
+    }
 }
 
 
-.tools {
-    position: fixed;
+.content {
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+}
+
+.contentHead {
     top: 0px;
     left: 0px;
     width: 100vw;
-    height: 50px;
+}
+
+.contentBody {
+    flex-grow: 1;
+}
+
+.tools,
+.options {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
     background: #222;
-    padding: 10px;
+    padding: 5px;
 
     button {
         height: 100%;
-        margin: 0 3px;
+        margin: 2px 2px !important;
+        height: 28px;
+        padding: 3px 7px;
         line-height: normal;
-        font-size: 16px;
+        font-size: 12px;
     }
 
     #autoRead,
     #autoSave,
-    #pauseAll {
+    #pauseAll,
+    #extraCols {
+        min-width: 125px;
+        max-width: 125px;
+
         &.active {
-            background-color: #69C;
+            background-color: #4AD;
         }
+    }
+
+    #addOrder {
+        background-color: #49B;
+
+        &:hover {
+            background-color: #5AC;
+        }
+    }
+
+    label {
+        display: flex;
+        margin: 0 0;
+
+        &:hover {
+            span {
+                background-color: #555;
+                color: #FFF;
+            }
+        }
+
+        span {
+            display: block;
+            background-color: #444;
+            text-align: center;
+            align-content: center;
+            color: #6BB;
+            width: 28px;
+            height: 28px;
+            font-size: 20px;
+            font-weight: bold;
+            line-height: 26px;
+            margin: 2px -2px 2px 15px;
+        }
+
+        button {
+            right: 0px;
+            margin: 0;
+        }
+    }
+
+    .sep {
+        display: none;
+        flex-basis: 2px;
+        min-width: 2px;
+        height: 10px;
+        background-color: #444;
+        margin: 0 5px;
     }
 }
 
-
-input {
-    position: absolute;
-    top: 0;
-    left: 0px;
-    width: 100%;
-    height: 100%;
-    max-width: 100%;
-    text-align: right;
-    border: none;
-    background: transparent;
-    font-family: monospace;
-    background: #366;
-    color: #DDD;
-    padding: 0 8px;
-}
 
 input.inputNumber::-webkit-outer-spin-button,
 input.inputNumber::-webkit-inner-spin-button {
@@ -83,15 +173,76 @@ input[affectedprop="max_workshops"] {
 .ordersTable {
     display: inline-block;
     width: auto;
-    margin: 30px 0;
+    margin: 30px 0 5px 0;
     background: #000;
 
+    input {
+        position: absolute;
+        top: 0;
+        left: 0px;
+        width: 100%;
+        height: 100%;
+        max-width: 100%;
+        text-align: right;
+        border: none;
+        background: transparent;
+        font-family: monospace;
+        background: #366;
+        color: #DDD;
+        padding: 0 8px;
+
+        &::placeholder {
+            color:#FFF5;
+        }
+
+    }
+
     .orderRow {
-        width: 1000px;
+        position: relative;
         border-top: 1px #FFF1 solid;
         display: flex;
         align-items: center;
         background-color: #222;
+
+        &.deleted {
+            &:before {
+                content: " ";
+                position: absolute;
+                display: block;
+                height: 2px;
+                background: #FFF5;
+                top: 50%;
+                left: 0;
+                width: 100%;
+                z-index: 8;
+            }
+
+            .property {
+                background-color: #522 !important;
+            }
+        }
+
+        &.edited {
+            &:before {
+                /*pen icon*/
+                content: "\270E";
+                position: absolute;
+                display: block;
+                background: #222;
+                color: #99A;
+                top: 3px;
+                right: calc(100% + 6px);
+                border-radius: 25px;
+                width: 25px;
+                height: 25px;
+                line-height: 25px;
+                z-index: 8;
+            }
+
+            .property {
+                background-color: #242 !important;
+            }
+        }
 
         &:hover {
             .property {
@@ -109,6 +260,18 @@ input[affectedprop="max_workshops"] {
 
         &.head {
             background: #333;
+        }
+
+        .head.job {
+            position: relative;
+
+            input {
+                position: absolute;
+                right: 0;
+                left: auto;
+                width: 150px;
+                overflow: visible;
+            }
         }
 
         &.dragOver {
@@ -144,8 +307,12 @@ input[affectedprop="max_workshops"] {
             align-items: center;
             justify-content: center;
             order: 1000;
-            min-width: 205px;
             height: 30px;
+            flex-basis: 190px;
+            min-width: 190px;
+            max-width: 190px;
+            z-index: 9;
+            background-color: #222;
 
             .rowTool.btnMax {
                 order: 970;
@@ -166,7 +333,8 @@ input[affectedprop="max_workshops"] {
 
 
 
-        .property {
+        .property,
+        .toolZone {
             position: relative;
             overflow: hidden;
             flex-basis: 40px;
@@ -181,6 +349,7 @@ input[affectedprop="max_workshops"] {
             line-height: 30px;
             background-color: #222;
             overflow: hidden;
+            text-align: left;
 
 
             &.toggleable {
@@ -215,39 +384,66 @@ input[affectedprop="max_workshops"] {
             }
 
             &.job {
-                flex-basis: 260px;
+                flex-basis: 210px;
+                min-width: 210px;
+                max-width: 210px;
                 order: 10;
-            }
 
-            &.amount_left {
-                flex-basis: 40px;
-                order: 30;
-                text-align: right;
-                max-width: 50px;
+                .progressBar {
+                    position: absolute;
+                    bottom: 0;
+                    left: 0;
+                    height: 3px;
+                    background-color: #4F46;
+                    width: 0%;
+                }
             }
 
             &.amount_total {
-                flex-basis: 40px;
+                flex-basis: 45px;
+                min-width: 45px;
+                max-width: 45px;
+                order: 30;
+                text-align: right;
+            }
+
+            &.amount_left {
+                flex-basis: 45px;
+                min-width: 45px;
                 order: 35;
                 text-align: right;
                 max-width: 50px;
+
+                input {
+                    color: #AAF;
+                }
             }
 
             &.max_workshops {
                 flex-basis: 40px;
+                min-width: 40px;
+                max-width: 40px;
                 order: 37;
                 text-align: right;
-                max-width: 50px;
+
+                input {
+                    text-align: center;
+                    color: #AFA;
+                }
             }
 
             &.item_subtype {
                 flex-basis: 200px;
+                min-width: 200px;
+                max-width: 200px;
                 order: 40;
             }
 
 
             &.material {
-                flex-basis: 200px;
+                flex-basis: 180px;
+                min-width: 180px;
+                max-width: 180px;
                 order: 50;
             }
 
@@ -257,15 +453,25 @@ input[affectedprop="max_workshops"] {
             }
 
             &.frequency {
-                flex-basis: 65px;
+                flex-basis: 80px;
+                min-width: 80px;
+                max-width: 80px;
                 order: 90;
             }
 
 
             &.item_conditions {
-                flex-basis: 140px;
+                flex-basis: 80px;
+                min-width: 80px;
+                max-width: 80px;
                 order: 100;
                 overflow: visible;
+
+                .conditionsNum {
+                    display: block;
+                    width: 100%;
+                    height: 10px;
+                }
 
                 &:hover {
                     .conditionsContainer {
@@ -275,15 +481,19 @@ input[affectedprop="max_workshops"] {
             }
 
             &.is_validated {
+                flex-basis: 40px;
+                min-width: 40px;
+                max-width: 40px;
                 text-align: center;
                 order: 110;
-                max-width: 40px;
             }
 
             &.is_active {
+                flex-basis: 40px;
+                min-width: 40px;
+                max-width: 40px;
                 text-align: center;
                 order: 111;
-                max-width: 40px;
             }
 
 
@@ -310,6 +520,17 @@ input[affectedprop="max_workshops"] {
                 background: #333;
             }
 
+            .buttons {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                margin: 2px 0;
+
+                * {
+                    flex-grow:1;
+                }
+            }
+
             .condition {
                 margin: 2px 0;
 
@@ -326,6 +547,19 @@ input[affectedprop="max_workshops"] {
                         background-color: #222;
                         flex-grow: 1;
                         text-align: center;
+
+                        &:empty {
+                            display: none;
+                        }
+                    }
+
+                    .btnCopy {
+                        order: 80;
+                        margin:0 2px;
+                    }
+                    .btnDelete {
+                        order: 90;
+                        margin:0 2px;
                     }
 
                     .cond_flags {
@@ -346,9 +580,11 @@ input[affectedprop="max_workshops"] {
 
                     .cond_condition {
                         order: 40;
-                        max-width: 25px;
-                        min-width: 25px;
-                        font-size: 130%;
+                        max-width: 30px;
+                        min-width: 30px;
+                        font-size: 100%;
+                        font-weight: bold;
+                        color: #2C6;
                     }
 
                     .cond_value {
@@ -364,6 +600,112 @@ input[affectedprop="max_workshops"] {
                 }
             }
 
+        }
+
+        .btnPaste {
+            &.disabled {
+                opacity: 0.2;
+            }
+        }
+
+        .btnAddCondition {
+            margin: 2px 0;
+            padding: 0;
+            background-color: #558;
+
+            &:hover {
+                background-color: #77C;
+            }
+        }
+    }
+}
+
+.orderEditor,
+.conditionEditor {
+    position: fixed;
+    display: flex;
+    flex-direction: column;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    flex-direction: column;
+    width: 330px;
+    max-width: 330px;
+    background-color: #333;
+    padding: 10px 20px 20px 20px;
+    color: #AAA;
+    z-index: 10;
+
+    &:before {
+        content: " ";
+        display: block;
+        position: absolute;
+        top: -60vh;
+        left: -60vw;
+        width: 150vw;
+        height: 150vh;
+        background: #111A;
+        z-index: -1;
+        pointer-events: none;
+    }
+
+    &>* {
+        margin: 1px 0;
+    }
+
+    H3 {
+        margin: 0 0 10px 0;
+    }
+
+    label {
+        display: flex;
+        width: 100%;
+
+        span {
+            display: block;
+            flex-basis: 95px;
+            max-width: 95px;
+            min-width: 95px;
+            text-align: right;
+            margin-right: 5px;
+            overflow: hidden;
+        }
+
+        input {
+            flex-grow: 1;
+            width: auto;
+            min-width: 0px;
+        }
+
+    }
+
+    select,
+    input {
+        border: none;
+        background: #366;
+        color: #DDD;
+        padding: 4px 8px;
+        margin-left: 2px;
+    }
+}
+
+.autocompleteList {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    left: 100%;
+    background-color: #000;
+
+    div {
+        padding: 0px 4px;
+        margin: 1px 0;
+        cursor: pointer;
+        background-color: #499;
+        color: #000;
+
+        &:hover {
+            background-color: #5AA;
+            color: #FFF;
         }
     }
 }
