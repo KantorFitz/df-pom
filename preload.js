@@ -6,8 +6,7 @@ contextBridge.exposeInMainWorld("api", {
     GetFileHandle: () => ipcRenderer.invoke("GetFileHandle"),
     WriteOrdersFile: (content) => ipcRenderer.invoke("WriteOrdersFile", content),
     GetSetConfig: (optionsObj) => ipcRenderer.invoke("GetSetConfig", optionsObj),
-    CycleSizeMode: (noChange) => ipcRenderer.invoke("CycleSizeMode", noChange),
     GetStocks: () => ipcRenderer.invoke("GetStocks"),
     GetJobsInfos: () => ipcRenderer.invoke("GetJobsInfos"),
-    ResetAppPaths: () => ipcRenderer.invoke("ResetAppPaths")
+    ResetAppPaths: () => ipcRenderer.invoke("ResetAppPaths"),
 });

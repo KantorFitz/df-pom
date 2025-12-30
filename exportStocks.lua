@@ -1,69 +1,75 @@
-	local startIndex = 69420;
-	local maxScans = 69421;
-	local counts = {}
-	local listFields = false
-	local isFirst = true
-	local index = 0
-	local itemType = ''
-	local itemSub = ''
-	local name = ''
-	local mi ='';
-	local subDef = nil;
+local startIndex = 69420;
+local maxScans = 69421;
+local counts = {}
+local listFields = false
+local isFirst = true
+local index = 0
+local itemType = ''
+local itemSub = ''
+local name = ''
+local mi ='';
+local subDef = nil;
 
-	for _, item in ipairs(df.global.world.items.other.IN_PLAY) do
-		if index < startIndex then
-			goto continue
-		end
-
-		maxScans = maxScans - 1
-		if item.flags.in_building then 
-			goto continue
-		end
-
-		if item.getType == nil then
-			goto continue
-		end
+if startIndex == 69420 then
+	startIndex = 0
+end
+if maxScans == 69420 then
+	maxScans = 1000
+end
 
 
-		itemType = item:getType()
-		itemSub = item:getSubtype()
-
-		subDef = dfhack.items.getSubtypeDef(itemType, itemSub)
-		name = df.item_type[itemType]
-		
-		if subDef ~= nil then
-			name = name .. ':' .. subDef.id
-		end
-
-		if name ~= nil then
-			mi = dfhack.matinfo.decode(item)
-			if mi then
-				name = name .. '@' .. mi:getToken()
-			end
-			counts[name] = (counts[name] or 0) + item.stack_size
-		end
-
-		::continue::
-		index = index + 1
-
-		if maxScans == 0 then
-			break
-		end
-
+for _, item in ipairs(df.global.world.items.other.IN_PLAY) do
+	if index < startIndex then
+		goto continue
 	end
 
-	if (maxScans > 0) then
-		index = 0
+	maxScans = maxScans - 1
+	if item.flags.in_building then 
+		goto continue
 	end
 
-	local output = 'lastIndex=' .. tostring(index) .. '/'
-	if index == 0 then
-		output = output .. 'completed/'
+	if item.getType == nil then
+		goto continue
 	end
 
-	for key, value in pairs(counts) do
-		output = output .. value.. '*'.. key .. '/'
+	itemType = item:getType()
+	itemSub = item:getSubtype()
+	subDef = dfhack.items.getSubtypeDef(itemType, itemSub)
+	typeName = df.item_type[itemType]
+	name = typeName
+	if subDef ~= nil then
+		name = typeName .. '!' .. subDef.id
 	end
 
-	dfhack.internal.setClipboardTextCp437(output)
-	collectgarbage()
+	if name ~= nil then
+		mi = dfhack.matinfo.decode(item)
+		if mi then
+			name = name .. '@' .. mi:getToken()
+		end
+		counts[name] = (counts[name] or 0) + item.stack_size
+	end
+
+	::continue::
+	index = index + 1
+
+	if maxScans == 0 then
+		break
+	end
+
+end
+
+if (maxScans > 0) then
+	index = 0
+end
+
+local output = 'lastIndex=' .. tostring(index) .. '/'
+if index == 0 then
+	output = output .. 'completed/'
+end
+
+for key, value in pairs(counts) do
+	output = output .. value.. '*'.. key .. '/'
+end
+
+dfhack.internal.setClipboardTextCp437(output)
+collectgarbage()

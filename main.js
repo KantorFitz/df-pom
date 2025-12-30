@@ -15,10 +15,9 @@ var stocksReaderMaxScans = 5000;
 var readingStuff = false;
 var jobsInfosStartIndex = 0;
 var jobsInfosMaxScans = 1000;
+var gameInfoLuaUpdated = false;
 
 function cl(msg) { console.log(msg); }
-
-
 
 
 app.whenReady().then(async () => {
@@ -34,9 +33,6 @@ app.whenReady().then(async () => {
 })
 
 
-
-
-
 ipcMain.handle("GetFileHandle", async () => {
     return config.ordersFilePath;
 });
@@ -46,10 +42,19 @@ async function ReadConfig() {
     if (fs.existsSync(CONFIG_PATH)) {
         cl("Reading existing config...");
         const configData = fs.readFileSync(CONFIG_PATH, "utf-8");
-        config = JSON.parse(configData);
+        try {
+            config = JSON.parse(configData);
+        } catch (e) {
+            CreateConfigFile();
+        }
     } else {
         cl("Creating new config...");
         CreateConfigFile();
+    }
+
+    if (!config.ignoredItems) {
+        config.ignoredItems = ["ENT%d", "HF%d"];
+        SaveConfig()
     }
 }
 
@@ -66,28 +71,46 @@ function CreateConfigFile() {
 }
 
 
+
 ipcMain.handle("GetGameInfos", async (e) => {
     if (!PathsReady())
         return;
 
     if (readingStuff)
-        return;
+        return "wait"
     readingStuff = true;
 
     return new Promise(async (resolve, reject) => {
         let path = config.dwarfPath + "\\dfhack-run.exe";
 
-        //read template
-        let luaScriptPath = app.getAppPath() + "\\gameInfo.lua";
+        let luaScriptUsePath = app.getAppPath() + "\\gameInfo_use.lua";
+        if (!gameInfoLuaUpdated) {
+            //read template, prepare used model
+            let luaScriptPath = app.getAppPath() + "\\gameInfo.lua";
 
-        cl("Executing dfhack-run... " + luaScriptPath);
-        let args = ["lua", "-f", luaScriptPath];
+            let luaScriptContent = fs.readFileSync(luaScriptPath, "utf-8");
+            if (!config.ignoredItems)
+                config.ignoredItems = [];
+            luaScriptContent = luaScriptContent.replace("'IGNORED_ITEMS_LIST'", `'` + config.ignoredItems.join(`','`) + `'`);
+            fs.writeFileSync(luaScriptUsePath, luaScriptContent, "utf-8");
+            gameInfoLuaUpdated = true;
+        }
+
+        //write used model
+
+        cl("Executing dfhack-run... " + luaScriptUsePath);
+        let args = ["lua", "-f", luaScriptUsePath];
 
         fs.access(path, fs.constants.F_OK | fs.constants.X_OK, (err) => {
             if (err) {
-                data = { error: { title: "Could not access dfhack-run.exe", msg: "Cannot access dfhack-run.exe. Please check the Dwarf Fortress path in settings." } };
-                data.context = "GetGameInfos1";
-                data.buttons = ["CONTINUE", "RESET APP PATHS"];
+                data = {
+                    error: {
+                        title: "Waiting for Dwarf Fortress...",
+                        msg: "Please start the game and load a Fortress.",
+                        context: "GetGameInfos1",
+                        buttons: ["WAIT", "RESET APP PATHS"]
+                    }
+                };
                 resolve(data);
                 return;
             }
@@ -95,9 +118,14 @@ ipcMain.handle("GetGameInfos", async (e) => {
             var oldClipboard = clipboard.readText();
             execFile(path, args, (error, stdout, stderr) => {
                 if (error) {
-                    data = { error: { title: "Execution error", msg: "An error occurred while executing dfhack-run.exe. Check if DFHack installed and if a Fortress mode game is running." } };
-                    data.context = "GetGameInfos2";
-                    data.buttons = ["CONTINUE", "RESET APP PATHS"];
+                    data = {
+                        error: {
+                            title: "Waiting for Dwarf Fortress...",
+                            msg: "Please start the game and load a Fortress.",
+                            context: "GetGameInfos2",
+                            buttons: ["WAIT", "RESET APP PATHS"]
+                        }
+                    };
                     cl(data);
                     resolve(data);
                     return;
@@ -114,8 +142,14 @@ ipcMain.handle("GetGameInfos", async (e) => {
                     resolve(data);
 
                 } catch (e) {
-                    data = { error: { title: "Data parsing error", msg: "An error occurred while parsing data pulled from Dwarf Fortress. <br>" + e } };
-                    data.context = "GetGameInfos3";
+                    data = {
+                        error: {
+                            title: "Data parsing error",
+                            msg: "An error occurred while parsing data pulled from Dwarf Fortress. <br>" + e,
+                            context: "GetGameInfos3",
+                            buttons: ["CONTINUE", "RESET APP PATHS"]
+                        }
+                    };
                     readingStuff = false;
                     cl(data);
                     resolve(data);
@@ -129,14 +163,13 @@ ipcMain.handle("GetGameInfos", async (e) => {
 });
 
 
-
-
 ipcMain.handle("GetJobsInfos", async () => {
     if (!PathsReady())
         return;
 
     if (readingStuff)
-        return;
+        return "wait"
+
     readingStuff = true;
 
     return new Promise(async (resolve, reject) => {
@@ -158,9 +191,14 @@ ipcMain.handle("GetJobsInfos", async () => {
 
         fs.access(path, fs.constants.F_OK | fs.constants.X_OK, (err) => {
             if (err) {
-                data = { error: { title: "Could not access dfhack-run.exe", msg: "Cannot access dfhack-run.exe. Please check the Dwarf Fortress path in settings." } };
-                data.context = "GetJobsInfos1";
-                data.buttons = ["CONTINUE", "RESET APP PATHS"];
+                data = {
+                    error: {
+                        title: "Could not access dfhack-run.exe",
+                        msg: "Cannot access dfhack-run.exe. Please check the Dwarf Fortress path in settings.",
+                        context: "GetJobsInfos1",
+                        buttons: ["CONTINUE", "RESET APP PATHS"]
+                    }
+                };
                 cl(data)
                 resolve(data);
             }
@@ -168,9 +206,14 @@ ipcMain.handle("GetJobsInfos", async () => {
             var oldClipboard = clipboard.readText();
             execFile(path, args, (error) => {
                 if (error) {
-                    data = { error: { title: "Execution error", msg: "An error occurred while executing dfhack-run.exe. Check if DFHack installed and if a Fortress mode game is running." } };
-                    data.context = "GetJobsInfos2";
-                    data.buttons = ["CONTINUE", "RESET APP PATHS"];
+                    data = {
+                        error: {
+                            title: "Waiting for Dwarf Fortress...",
+                            msg: "Please open the 'Job Orders > Create Task' menu once to allow data extraction.",
+                            context: "GetJobsInfos2a",
+                            buttons: ["WAIT", "RESET APP PATHS"]
+                        }
+                    };
                     cl(data);
                     resolve(data);
                     return;
@@ -183,14 +226,26 @@ ipcMain.handle("GetJobsInfos", async () => {
 
                     data = data.replace(/,}/g, "}");
                     data = data.replace(/,]/g, "]");
+
                     data = JSON.parse(data);
+                    if (data.jobs.length == 0) {
+                        data = {
+                            error: {
+                                title: "Waiting for Job Orders",
+                                msg: "Please open the 'Job Orders > Create Task' menu once to allow data extraction.",
+                                context: "GetJobsInfos2b",
+                                buttons: ["WAIT", "RESET APP PATHS"]
+                            }
+                        };
+                        cl(data);
+                        resolve(data);
+                        return;
+                    }
                     jobsInfosStartIndex = data.pauseAtIndex;
                     resolve(data);
 
                 } catch (e) {
-
-                    data = { error: { title: "Data parsing error", msg: "An error occurred while parsing data pulled from Dwarf Fortress.<br>" + e } };
-                    data.context = "GetJobsInfos3";
+                    data = "wait"
                     cl(data);
                     resolve(data);
                     readingStuff = false;
@@ -212,7 +267,7 @@ ipcMain.handle("GetStocks", async () => {
         return;
 
     if (readingStuff)
-        return;
+        return "wait"
     readingStuff = true;
 
     return new Promise(async (resolve, reject) => {
@@ -231,20 +286,30 @@ ipcMain.handle("GetStocks", async () => {
 
         fs.access(path, fs.constants.F_OK | fs.constants.X_OK, (err) => {
             if (err) {
-                data = { error: { title: "Could not access dfhack-run.exe", msg: "Cannot access dfhack-run.exe. Please check the Dwarf Fortress path in settings." } };
-                data.context = "GetStocks1";
-                data.buttons = ["CONTINUE", "RESET APP PATHS"];
+                data = {
+                    error: {
+                        title: "Waiting for Dwarf Fortress...",
+                        msg: "Please start the game and load a Fortress.",
+                        context: "GetStocks1",
+                        buttons: ["WAIT", "RESET APP PATHS"]
+                    }
+                };
                 cl(data)
                 resolve(data);
                 return;
             }
 
             var oldClipboard = clipboard.readText();
-            execFile(path, args, (error) => {
+            execFile(path, args, async (error) => {
                 if (error) {
-                    data = { error: { title: "Execution error", msg: "An error occurred while executing dfhack-run.exe. Check if DFHack installed and if a Fortress mode game is running." } };
-                    data.context = "GetStocks2";
-                    data.buttons = ["CONTINUE", "RESET APP PATHS"];
+                    data = {
+                        error: {
+                            title: "Waiting for Dwarf Fortress...",
+                            msg: "Please start the game and load a Fortress.",
+                            context: "GetStocks2",
+                            buttons: ["WAIT", "RESET APP PATHS"]
+                        }
+                    };
                     cl(data);
                     resolve(data);
                     return;
@@ -253,13 +318,33 @@ ipcMain.handle("GetStocks", async () => {
                 try {
                     //read from clipboard file
                     let data = ProcessStockData(clipboard.readText())
+                    if (Object.keys(data.stocks).length == 0) {
+                        data = {
+                            error: {
+                                title: "Waiting for Dwarf Fortress...",
+                                msg: "Please start the game and load a Fortress.",
+                                context: "GetStocks3a",
+                                buttons: ["WAIT", "RESET APP PATHS"]
+                            }
+                        };
+                        cl(data);
+                        readingStuff = false;
+                        resolve(data);
+                        return;
+                    }
                     resolve(data);
                     clipboard.writeText(oldClipboard);
 
                 } catch (e) {
                     if (error) {
-                        data = { error: { title: "Execution error", msg: "An error occurred while parsing data pulled from Dwarf Fortress.<br>" + e } };
-                        data.context = "GetStocks3";
+                        data = {
+                            error: {
+                                title: "Waiting for Dwarf Fortress...",
+                                msg: "Please start the game and load a Fortress.",
+                                context: "GetStocks3b",
+                                buttons: ["WAIT", "RESET APP PATHS"]
+                            }
+                        };
                         cl(data);
                         readingStuff = false;
                         resolve(data);
@@ -297,13 +382,12 @@ ipcMain.handle("ReadOrdersFile", async () => {
         return;
     }
 
-    if (readingStuff) {
-        cl("Already reading stuff, returning...");
-        return;
-    }
+    if (readingStuff)
+        return "wait"
+
+    readingStuff = true;
 
     cl("Reading orders file...");
-    readingStuff = true;
 
     return new Promise((resolve, reject) => {
         let path = config.dwarfPath + "\\dfhack-run.exe";
@@ -315,9 +399,14 @@ ipcMain.handle("ReadOrdersFile", async () => {
 
         fs.access(path, fs.constants.F_OK | fs.constants.X_OK, (err) => {
             if (err) {
-                data = { error: { title: "Could not access dfhack-run.exe", msg: "Cannot access dfhack-run.exe. Please check the Dwarf Fortress path in settings." } };
-                data.context = "ReadFile1";
-                data.buttons = ["CONTINUE", "RESET APP PATHS"];
+                data = {
+                    error: {
+                        title: "Could not access dfhack-run.exe",
+                        msg: "Cannot access dfhack-run.exe. Please check the Dwarf Fortress path in settings.",
+                        context: "ReadFile1",
+                        buttons: ["CONTINUE", "RESET APP PATHS"]
+                    }
+                };
                 cl(data)
                 resolve(data);
                 readingStuff = false
@@ -326,9 +415,14 @@ ipcMain.handle("ReadOrdersFile", async () => {
 
             execFile(path, args, (error) => {
                 if (error) {
-                    data = { error: { title: "Execution error", msg: "An error occurred while executing dfhack-run.exe. Check if DFHack installed and if a Fortress mode game is running." } };
-                    data.context = "ReadFile2";
-                    data.buttons = ["CONTINUE", "RESET APP PATHS"];
+                    data = {
+                        error: {
+                            title: "Waiting for Dwarf Fortress...",
+                            msg: "Please start the game and load a Fortress.",
+                            context: "ReadFile2",
+                            buttons: ["WAIT", "RESET APP PATHS"]
+                        }
+                    };
                     cl(data);
                     resolve(data);
                     return;
@@ -338,8 +432,13 @@ ipcMain.handle("ReadOrdersFile", async () => {
                     const data = fs.readFileSync(config.ordersFilePath, "utf-8");
                     resolve(data);
                 } catch (e) {
-                    data = { error: { title: "Execution error", msg: "An error occurred while trying to read exported orders." + e } };
-                    data.context = "ReadFile3";
+                    data = {
+                        error: {
+                            title: "Execution error",
+                            msg: "An error occurred while trying to read exported orders." + e,
+                            context: "ReadFile3",
+                        }
+                    };
                     readingStuff = false;
                     cl(data);
                     reject(e);
@@ -368,7 +467,8 @@ async function SendToDF() {
         return;
 
     if (readingStuff)
-        return;
+        return "wait"
+
     readingStuff = true;
 
     let path = config.dwarfPath + "\\dfhack-run.exe";
@@ -379,9 +479,14 @@ async function SendToDF() {
     try {
         fs.access(path, fs.constants.F_OK | fs.constants.X_OK, (err) => {
             if (err) {
-                data = { error: { title: "Could not access dfhack-run.exe", msg: "Cannot access dfhack-run.exe. Please check the Dwarf Fortress path in settings." } };
-                data.context = "SendToDF1";
-                data.buttons = ["CONTINUE", "RESET APP PATHS"];
+                data = {
+                    error: {
+                        title: "Could not access dfhack-run.exe",
+                        msg: "Cannot access dfhack-run.exe. Please check the Dwarf Fortress path in settings.",
+                        context: "SendToDF1",
+                        buttons: ["CONTINUE", "RESET APP PATHS"]
+                    }
+                };
                 cl(data)
                 resolve(data);
                 return;
@@ -390,22 +495,34 @@ async function SendToDF() {
             //clear orders command
             execFile(path, args1, (error) => {
                 if (error) {
-                    data = { error: { title: "Execution error", msg: "An error occurred while executing dfhack-run.exe. Check if DFHack installed and if a Fortress mode game is running." } };
-                    data.context = "SendToDF2";
-                    data.buttons = ["CONTINUE", "RESET APP PATHS"];
+                    data = {
+                        error: {
+                            title: "Execution error",
+                            msg: "An error occurred while executing dfhack-run.exe. Check if DFHack installed and if a Fortress mode game is running.",
+                            context: "SendToDF2",
+                            buttons: ["CONTINUE", "RESET APP PATHS"]
+                        }
+                    };
                     cl(data);
                     resolve(data);
+                    readingStuff = false;
                     return;
                 }
 
                 //import orders command
                 execFile(path, args2, (error) => {
                     if (error) {
-                        data = { error: { title: "Execution error", msg: "An error occurred while executing dfhack-run.exe. Check if DFHack installed and if a Fortress mode game is running." } };
-                        data.context = "SendToDF3";
-                        data.buttons = ["CONTINUE", "RESET APP PATHS"];
+                        data = {
+                            error: {
+                                title: "Execution error",
+                                msg: "An error occurred while executing dfhack-run.exe. Check if DFHack installed and if a Fortress mode game is running.",
+                                context: "SendToDF3",
+                                buttons: ["CONTINUE", "RESET APP PATHS"]
+                            }
+                        };
                         cl(data);
                         resolve(data);
+                        readingStuff = false;
                         return;
                     }
                 });
@@ -420,28 +537,13 @@ async function SendToDF() {
     }
 }
 
-
-ipcMain.handle("CycleSizeMode", (e, noChange) => {
-    ReadConfig();
-
-    if (config.sizeMode === undefined) {
-        config.sizeMode = 2;
-    } else {
-        if (!noChange) {
-            config.sizeMode++;
-            if (config.sizeMode > 3)
-                config.sizeMode = 0;
-        }
-    }
-    SaveConfig();
-    return config.sizeMode;
-});
-
-
 ipcMain.handle("GetSetConfig", async (e, newConfig) => {
     await ReadConfig();
 
     if (newConfig != null) {
+        if (config.ignoredItems.toString() != newConfig.ignoredItems.toString())
+            gameInfoLuaUpdated = false;
+
         config = newConfig;
         await SaveConfig();
     }
@@ -596,3 +698,7 @@ function ProcessStockData(rawData) {
     return response;
 }
 
+
+async function pause(milliseconds) {
+    return new Promise(resolve => setTimeout(resolve, milliseconds));
+}

@@ -6,23 +6,34 @@ var clonedOrders;
 var fileHandle;
 var orders = [];
 var config = {}
+
 var conditionJustCopied = false;
 var currentHoverOrder = null;
 var copiedCondition = null;
-var displayedTab = "raw";
-var ordersTable = $(".ordersTable")[0];
-var isShiftPressed = false;
+var displayedTab = "orders";
+
 var mustReadOrders = false;
 var mustWriteOrders = false;
-var headerReady = false;
+var mustReadStocks = false;
+
+var ordersTable;
+var isShiftPressed = false;
+var isCtrlPressed = false;
 var allOrdersPaused = false;
 var waitForOrdersOperation = false;
 var autoFillSource = {};
 var errorCallback;
-var stockReadcompleted = false;
 var enterKeyDown;
 var autoReadStocks = false;
-var lastBoardFilter = "";
+var lastInventoryFilter = "";
+var lastFilterChange = 0;
+var filterDelayer = null;
+var materialNames = [];
+var hoveredNumInput = null;
+var itemJob = [];
+var hoveredConditionsOrder;
+var jobSortedNames = [];
+var itemTypesRequiringSubtypes = [];
 const PAUSECHANNEL_ALLSTASKS = -2;
 const PAUSECHANNEL_FROMTASK = -1;
 const PAUSECHANNEL_ONETASK = 0;
@@ -35,26 +46,29 @@ var fuses = [];
 var currendFuseInput;
 var previousSizeMode;
 var removeOptionalRows = false;
-var wantedProduction = {};
 const DELAY_BETWEEN_FILE_OPS_MS = 3500;
 var multiFill = false;
-var editedConditionsOrder;
-var editedConditionsIndex;
+var openedConditionsOrder;
+var openedConditionsIndex;
 var lastFileAccess;
 var readingStocks = false;
-var isCraftingMaterials = [];
-var boardDisplayedMaterials = [];
-var boardStaticHeader;
-var boardStaticHeaderCorner;
+var readingJobs = false;
+var inventoryDisplayedMaterials = [];
+var inventoryStaticHeader;
+var inventoryStaticHeaderCorner;
 var oldStocks;
 var stocks = [];
 var tempStocks = [];
 var stocksMaterials = [];
 var jobs = null;
-var _jobsReady = false;
-var gameInfo = {};
-var sortedItemNames = [];
-var abortInit = false;
+var tempJobs = [];
+var gm = {};
+var sortedItemsAllIds = [];
+var sortedItemSubTypesIds = [];
+var sortedItemTypesIds = [];
+var sortedItemsAndTypesNames = [];
+var sortedJobTypes = [];
+var itemTypesMembers = {};
 
 var sideA;
 var sideB;
@@ -70,20 +84,145 @@ var materialGroups = [
     "GLASS",
     "CERAMIC",
     "BONE",
-    "PLANT",
-    "MEAT",
     "OTHER",
 ]
 
-
-setInterval(ReloadCss, 2500);
-setInterval(ReadWriteWatcher, 333);
-
 var cl = console.log
 
+
+setInterval(ReloadCss, 2500);
+
+document.addEventListener("DOMContentLoaded", async (event) => { InitDOM() });
+document.addEventListener("mouseover", function (e) {
+    hoveredNumInput = null;
+    hoveredNumInputTime = Date.now();
+    if (e.target instanceof HTMLInputElement && e.target.classList.contains("inputNumber"))
+        hoveredNumInput = e.target;
+});
+
+async function InitDOM() {
+    fileHandle = await window.api.GetFileHandle();
+
+    SetTab("orders");
+
+    await InitData();
+
+    inventoryStaticHeader = $(".inventoryTableHeader")[0];
+    ordersTable = $(".ordersTable")[0];
+    document.addEventListener("keydown", (e) => { OnGeneralKeyDown(e) });
+    $("#inventoryMaterialsFilter")[0].addEventListener("mouseup", (e) => { e.stopPropagation(); });
+    $("#inventoryMaterialsFilter")[0].addEventListener("keyup", (e) => {
+        if (e.key == "Enter")
+            InventoryMaterialsFilterEnter()
+    });
+    $(".inventoryMaterialsPicker")[0].addEventListener("mouseup", (e) => { e.stopPropagation(); });
+    $(".inventoryTable")[0].addEventListener("scroll", (e) => {
+        inventoryStaticHeader.style.transform = `translateX(-${e.target.scrollLeft}px)`;
+        inventoryStaticHeaderCorner ??= $(".inventoryTableHeader .corner")[0];
+        if (inventoryStaticHeaderCorner)
+            inventoryStaticHeaderCorner.style.transform = `translateX(${e.target.scrollLeft}px)`;
+    });
+    sideA = $(".inventoryBody .itemsSide")[0];
+    sideB = $(".inventoryBody .valuesSide")[0];
+
+    PrepareInput($("input#conditionValue")[0]);
+}
+
+async function InitData() {
+
+    await GetConfig();
+    ApplyConfigClasses();
+
+    let ok = false;
+    while (!ok) {
+        ok = await GetGameInfos();
+        if (!ok)
+            await pause(500);
+    }
+
+    ok = false;
+    while (!ok) {
+        ok = await ReadJobs();
+        if (!ok)
+            await pause(500);
+    }
+
+    initDone = true;
+
+    QueueOrdersRead(true);
+    QueueStocksRead(true);
+    DataAutoUpdater();
+}
+
+function QueueOrdersRead(immediate = false) {
+    mustReadOrders = true;
+    if (immediate)
+        TryReadWriteOrders();
+}
+
+function QueueOrdersSave(immediate = false) {
+    mustWriteOrders = true;
+    if (immediate)
+        TryReadWriteOrders();
+}
+
+function QueueStocksRead(immediate = false) {
+    mustReadStocks = true;
+    if (immediate)
+        TryReadStocks();
+}
+
+async function DataAutoUpdater() {
+    if (initDone) {
+        await TryReadWriteOrders();
+        await TryReadStocks();
+    }
+
+    setTimeout(DataAutoUpdater, 150);
+}
+
+
+async function TryReadWriteOrders() {
+    var currentFileAccess = Date.now();
+    if (lastFileAccess == undefined)
+        lastFileAccess = 0;
+
+    var timePassed = currentFileAccess - lastFileAccess;
+    if (timePassed < DELAY_BETWEEN_FILE_OPS_MS)
+        return;
+
+    //check if any condition editor is opened
+    var conditionEdited = openedConditionsOrder != null || document.querySelector(".conditionEditor:hover") || document.querySelector(".item_conditions:hover");
+    if (!conditionEdited) {
+        if (mustWriteOrders) {
+
+            mustWriteOrders = false;
+            lastFileAccess = Date.now();
+            await WriteOrders();
+            lastFileAccess = Date.now();
+
+        } else if (mustReadOrders || config.toggleAutoReadOrders) {
+
+            mustReadOrders = false;
+            lastFileAccess = Date.now();
+            await ReadOrders();
+            lastFileAccess = Date.now();
+
+        }
+    }
+}
+
+
+
 document.addEventListener("keyup", (e) => {
+    if (PopInfoActive())
+        return;
+
     if (!e.shiftKey)
         isShiftPressed = false;
+
+    if (!e.ctrlKey)
+        isCtrlPressed = false;
 
     if (e.key == "Enter")
         enterKeyDown = false;
@@ -126,7 +265,7 @@ document.addEventListener("keyup", (e) => {
                     } else {
                         PauseTask(currentHoverOrder, PAUSECHANNEL_ONETASK);
                     }
-                    UpdateTable();
+                    UpdateOrdersTable();
                 }
             }
         }
@@ -136,7 +275,7 @@ document.addEventListener("keyup", (e) => {
         //delete
         if (e.ctrlKey) {
             e.preventDefault();
-            if ($(".boardMaterialsPickerHost:not(.hidden)")[0]) {
+            if ($(".inventoryMaterialsPickerHost:not(.hidden)")[0]) {
                 ClearStocksMaterialsFilter();
             } else {
                 DeleteTask(currentHoverOrder);
@@ -150,14 +289,14 @@ document.addEventListener("keyup", (e) => {
             CancelChanges()
         }
     }
-    if (key == "w") {
+    if (key == "tab") {
         //switch tab
         if (e.ctrlKey) {
             e.preventDefault();
-            if (displayedTab == "board") {
-                SetTab("stocks");
+            if (displayedTab == "inventory") {
+                SetTab("orders");
             } else {
-                SetTab("board");
+                SetTab("inventory");
             }
         }
     }
@@ -230,84 +369,47 @@ document.addEventListener("keyup", (e) => {
     }
 
     if (key == "escape") {
-        CloseAllPopups();
+        OnRightClickOrEscape();
     }
 });
 
 document.addEventListener("wheel", e => {
+    if (hoveredNumInput != null && TimeSinceInputHovered() > 300) {
+        e.preventDefault();
+
+        var delta = Math.sign(e.deltaY);
+        if (isCtrlPressed)
+            delta *= 5;
+        var curVal = e.target.value;
+        curVal = curVal === "" ? 0 : curVal;
+        var newValue = Math.max(0, parseInt(curVal) - delta);
+        e.target.value = newValue;
+        var event = new Event('change');
+        e.target.dispatchEvent(event);
+
+        return;
+    }
+
+    if (isShiftPressed || isCtrlPressed)
+        return false;
+
     var host = e.target.closest(".hozScroll");
     if (!host)
         return;
-    const style = getComputedStyle(host);
-    cl(style.overflowY);
-    if (style.overflowY == "hidden") {
-        host.scrollLeft += e.deltaY * 2;
-        e.preventDefault();
-    }
+
+    e.preventDefault();
+    host.scrollLeft += e.deltaY;
+
 }, { passive: false });
 
-
-document.addEventListener("DOMContentLoaded", async (event) => { InitDOM() });
-
-async function InitDOM() {
-    fileHandle = await window.api.GetFileHandle();
-
-    await InitData();
-
-    boardStaticHeader = $(".boardTableHeader")[0];
-    $("body")[0].addEventListener("mouseup", (e) => { if (e.button == 0) BackgroundClicked() });
-    $("body")[0].addEventListener("keydown", (e) => { OnGeneralKeyDown(e) });
-    $("#boardMaterialsFilter")[0].addEventListener("mouseup", (e) => { e.stopPropagation(); });
-    $("#boardMaterialsFilter")[0].addEventListener("keyup", (e) => {
-        if (e.key == "Enter")
-            BoardMaterialsFilterEnter()
-    });
-    $(".boardMaterialsPicker")[0].addEventListener("mouseup", (e) => { e.stopPropagation(); });
-    $(".boardBody")[0].addEventListener("scroll", (e) => {
-        boardStaticHeader.style.transform = `translateX(-${e.target.scrollLeft}px)`;
-        boardStaticHeaderCorner ??= $(".boardTableHeader .corner")[0];
-        if (boardStaticHeaderCorner)
-            boardStaticHeaderCorner.style.transform = `translateX(${e.target.scrollLeft}px)`;
-    });
-    sideA = $(".boardBody .itemsSide")[0];
-    sideB = $(".boardBody .valuesSide")[0];
-
-    PrepareInput($("input#conditionValue")[0]);
-    InitStockTable()
-    SetTab("raw");
+function TimeSinceInputHovered() {
+    return Date.now() - hoveredNumInputTime;
 }
 
-async function InitData() {
-    errorCallback = InitData;
+function CheckError(data, waitingToken) {
+    if (data == "wait")
+        return true;
 
-    await GetConfig();
-    if (abortInit)
-        return;
-
-    ApplyConfigClasses();
-
-    await GetGameInfos();
-    if (abortInit)
-        return;
-
-    await CycleSizeMode(true);
-    if (abortInit)
-        return;
-
-    await ToggleOption("LessColumns", true);
-    if (abortInit)
-        return;
-
-    await ReadOrders();
-    if (abortInit)
-        return;
-
-    ReadStocksBatch();
-
-    errorCallback = null;
-}
-
-function CheckError(data) {
     if (data == null) {
         //output error to console
         console.error("No data received from main process.");
@@ -315,138 +417,158 @@ function CheckError(data) {
         PopInfo("Error", "No data received from main process.");
         return true;
     }
+
     if (data.error != undefined) {
-        PopInfo(data.error.title, data.error.msg, data.context, data.buttons, errorCallback);
+        setTimeout(() => {
+            const d = data.error;
+            const cb = errorCallback;
+            const wt = waitingToken;
+            PopInfo(d.title, d.msg, d.context, d.buttons, errorCallback, wt);
+        });
         return true;
     }
+
+    return false;
 }
 
 async function GetGameInfos() {
-    gameInfo = await window.api.GetGameInfos();
-    if (CheckError(gameInfo))
-        return;
+    gm = await window.api.GetGameInfos();
 
-    sortedItemNames = Object.keys(gameInfo.items).map(key => gameInfo.items[key].name);
-    sortedItemNames.sort((a, b) => {
-        return a.localeCompare(b);
-    });
-    //remove duplicates
-    sortedItemNames = [...new Set(sortedItemNames)];
+    if (CheckError(gm, "GetGameInfo"))
+        return false;
+    ClosePopInfoWaiting("GetGameInfo");
 
-    Object.keys(gameInfo.reactions).forEach(key => {
-        var reaction = gameInfo.reactions[key];
-        reaction.reagents.forEach(reagent => {
-            reagent.itemName = gameInfo.itemTypes[reagent.itemType] ?? ""
-            reagent.material = gameInfo.materials[reagent.mat_index] ?? ""
-        })
-    });
+    sortedItemSubTypesIds = Object.keys(gm.items);
+    sortedItemSubTypesIds.sort((a, b) => { return a.localeCompare(b); });
 
-    gameInfo["material_types"] = {}
-    Object.keys(gameInfo["materials"]).forEach((mat) => {
-        matI = gameInfo["materials"][mat]
+    sortedItemTypesIds = Object.values(gm.item_types);
+    sortedItemTypesIds.sort((a, b) => { return a.localeCompare(b); });
+
+    var itemNames = Object.keys(gm.items).map(key => gm.items[key].name);
+    itemNames = [...new Set(itemNames)];
+
+    sortedItemsAndTypesNames = sortedItemTypesIds.map(name => name.toLowerCase()).concat(itemNames);
+    sortedItemsAndTypesNames.sort((a, b) => { return a.localeCompare(b); });
+
+    sortedItemsAllIds = sortedItemSubTypesIds.concat(sortedItemTypesIds);
+    sortedItemsAllIds.sort((a, b) => { return a.localeCompare(b); });
+    sortedItemsAllIds = [...new Set(sortedItemsAllIds)];
+
+    gm["material_types"] = {}
+    materialNames = []
+
+    gm.materials["GLASS_GREEN"] = { Types: ["GLASS"] };
+    gm.materials["GLASS_CLEAR"] = { Types: ["GLASS"] };
+    gm.materials["GLASS_CRYSTAL"] = { Types: ["GLASS"] };
+    gm.materials["COAL:CHARCOAL"] = { Types: ["COAL"] };
+    gm.materials["COAL:COKE"] = { Types: ["COAL"] };
+    gm.materials["SILK"] = { Types: ["SILK"] };
+    Object.keys(gm.materials).forEach((mat) => {
+        matI = gm.materials[mat]
+
         if (!matI.Types)
             matI.Types = [];
 
+        matI.id = mat;
         matI.Types.forEach((flag) => {
-            if (!gameInfo["material_types"][flag])
-                gameInfo["material_types"][flag] = []
-            gameInfo["material_types"][flag].push(mat)
+            if (!gm["material_types"][flag])
+                gm["material_types"][flag] = []
+            gm["material_types"][flag].push(mat)
         });
+        gm.materials[mat] = matI;
+        materialNames.push(matI.name);
     });
+
+    itemTypesRequiringSubtypes = []
+    Object.keys(gm.items).forEach((itemId) => {
+        var item = gm.items[itemId];
+        var group = item.typeName.toUpperCase();
+        itemTypesMembers[group] = itemTypesMembers[group] || [];
+        itemTypesMembers[group].push(item);
+        itemTypesRequiringSubtypes.push(item.typeName);
+    });
+
+    Object.values(gm.item_types).forEach((itemType) => {
+        gm.items[itemType] = {
+            subtypeName: "",
+            typeName: itemType,
+            name: itemType.toLowerCase(),
+            isTypeOnly: true
+        };
+    });
+
+    gm.items["CRAFTS"] = {
+        name: "crafts",
+        subtypeName: "",
+        typeName: "CRAFTS"
+    };
+
+    return true;
 }
 
-var propertiesInfos = [
-    {
-        name: "id",
-        displayName: "ID",
-        visible: false,
-        numeric: true,
-    },
-    {
-        name: "is_active",
-        displayName: "⚙", //gear icon
-        visible: true,
-        compactable: true,
-        yesno: true,
-    },
-    {
-        name: "is_validated",
-        displayName: "✔",
-        visible: true,
-        compactable: true,
-        yesno: true,
-    },
-    {
-        name: "job",
-        displayName: "Job",
-        visible: true,
-        search: true,
-    },
-    {
-        name: "reaction",
-        displayName: "Job",
-        visible: false,
-    },
-    {
-        name: "item_subtype",
-        displayName: "Item",
-        visible: false,
-    },
-    {
-        name: "material",
-        displayName: "Material",
-        visible: true,
-    },
-    {
-        name: "material_category",
-        displayName: "Material Category",
-        visible: false,
-    },
 
-    {
-        name: "amount_left",
-        displayName: "Left",
-        isInput: true,
-        visible: true,
-        numeric: true,
-    },
-    {
-        name: "amount_total",
-        displayName: "Goal",
-        isInput: true,
-        visible: true,
-        numeric: true,
-    },
-    {
-        name: "frequency",
-        displayName: "Check freq.",
-        visible: true,
-        compactable: true,
-    },
-    {
-        name: "item_conditions",
-        displayName: "Conds.",
-        visible: true,
-    },
-    {
-        name: "max_workshops",
-        displayName: "Wrk",
-        visible: true,
-        isInput: true,
-        numeric: true,
-    },
+async function ReadJobs() {
 
-]
+    let ok = false;
+    readJobsCompleted = false;
+
+    TraceActivity("Reading jobs...");
+    while (!ok) {
+        ok = await ReadJobsBatch();
+        if (!ok)
+            await pause(100);
+    }
+    TraceActivity("Reading jobs: completed.");
+
+    return true;
+}
+
+
+async function ReadJobsBatch() {
+    data = await window.api.GetJobsInfos();
+
+    if (data == null) {
+        cl("error: null data");
+        return false;
+    }
+
+    if (CheckError(data, "Jobs")) {
+        await pause(2500);
+        return false;
+    }
+    ClosePopInfoWaiting("Jobs");
+
+    data.jobs.forEach(job => {
+        tempJobs.push(job);
+    });
+
+    if (data.completed) {
+        jobs = tempJobs;
+        CleanupJobsData();
+        return true;
+    }
+
+    return false;
+}
 
 function DragStart(e) {
     e.dataTransfer.setData("text/plain", null);
-    var from = Array.from(e.target.parentElement.children);
-    e.dataTransfer.setData("orderIndex", from.indexOf(e.target));
+    var myRow = e.target.closest(".orderRow");
+    if (myRow) {
+        var siblings = Array.from(myRow.parentElement.children);
+        e.dataTransfer.setData("orderIndex", siblings.indexOf(myRow));
+        setTimeout(() => { $("body")[0].classList.add("dragging") }, 10);
+    } else {
+        //cancel drag
+        e.preventDefault();
+    }
 }
 
 function DragOver(e) {
     e.preventDefault();
-    e.target.parentElement.classList.add("dragOver");
+    var myRow = e.target.closest(".orderRow");
+    if (myRow)
+        myRow.classList.add("dragOver");
 }
 
 function DragLeave(e) {
@@ -454,88 +576,55 @@ function DragLeave(e) {
     $(".dragOver").forEach(el => el.classList.remove("dragOver"));
 }
 
+function DragEnd(e) {
+    setTimeout(() => { $("body")[0].classList.remove("dragging") }, 10);
+
+}
+
 function DragDrop(e) {
     e.preventDefault();
     $(".dragOver").forEach(el => el.classList.remove("dragOver"));
-    const fromIndex = e.dataTransfer.getData("orderIndex") - 1;
-    const toIndex = Array.from(ordersTable.children).indexOf(e.target.parentElement) - 1;
+
+    var targetRow = e.target.closest(".orderRow");
+    if (!targetRow)
+        return;
+
+    const fromIndex = e.dataTransfer.getData("orderIndex");
+    const toIndex = Array.from(ordersTable.children).indexOf(targetRow);
     if (fromIndex === toIndex)
         return;
+
+    cl("splice " + fromIndex + " to " + toIndex);
     const movedOrder = orders.splice(fromIndex, 1)[0];
 
     orders.splice(toIndex, 0, movedOrder);
 
+    cl(movedOrder);
+    MarkEdited(movedOrder);
+    UpdateOrdersTable();
+    /*
     if (toIndex > fromIndex) {
         ordersTable.insertBefore(ordersTable.children[fromIndex + 1], ordersTable.children[toIndex + 2]);
     } else {
         ordersTable.insertBefore(ordersTable.children[fromIndex + 1], ordersTable.children[toIndex + 1]);
     }
+    */
+
     if (config.toggleAutoSaveOrders)
         QueueOrdersSave(true);
 }
 
 
-function UpdateTable(forceRedrawConditions = false) {
-    var orderlines = $(".ordersTable .orderRow")
+function UpdateOrdersTable(forceRedrawConditions = false) {
+    var orderlines = ordersTable.querySelectorAll(".orderRow")
     orderlines.forEach(line => {
         //dont delete the header line
-        if (line.classList.contains("header"))
-            return;
         if (orders.find(o => o.id == line.getAttribute("orderId")) == null)
             line.remove()
     });
-    ordersTable = $(".ordersTable")[0];
 
-
-    if (!headerReady) {
-        newLine = document.createElement("div");
-        newLine.classList.add("orderRow", "header");
-        propertiesInfos.forEach(prop => {
-            if (prop.visible === false)
-                return;
-            var cell = document.createElement("div");
-            cell.classList.add("property", "head", prop.name);
-            if (prop.compactable)
-                cell.classList.add("optionalCol");
-
-            if (prop.numeric)
-                cell.classList.add("num");
-
-            if (prop.yesno)
-                cell.classList.add("yesno");
-
-            cell.textContent = prop.displayName;
-
-            if (prop.search) {
-                var input = document.createElement("input");
-                input.type = "text";
-                input.classList.add("searchInput", prop.name, "autofocus");
-                input.placeholder = "Search...";
-                input.addEventListener("keyup", (e) => {
-                    var searchTerm = e.target.value.toLowerCase();
-                    FilterJobs(searchTerm);
-                });
-                input.addEventListener("focus", (e) => {
-                    e.target.value = "";
-                });
-                cell.appendChild(input);
-            }
-
-            newLine.appendChild(cell);
-        });
-
-        var toolZone = document.createElement("div");
-        toolZone.classList.add("toolZone", "head");
-        newLine.appendChild(toolZone);
-
-        headerReady = true;
-        ordersTable.appendChild(newLine);
-    }
 
     orders.forEach(order => {
-
-        if (order.conditionsHovered)
-            return;
 
         var editedLine = ordersTable.querySelector(`div[orderId='${order.id}']`);
         var orderIndex = orders.indexOf(order);
@@ -550,10 +639,12 @@ function UpdateTable(forceRedrawConditions = false) {
             editedLine.addEventListener("dragover", (e) => { DragOver(e); });
             editedLine.addEventListener("dragleave", (e) => { DragLeave(e); });
             editedLine.addEventListener("drop", (e) => { DragDrop(e); });
-            editedLine.addEventListener("mouseenter", (e) => { currentHoverOrder = GetOrderFromElement(e.currentTarget); });
-            editedLine.addEventListener("mousemove", (e) => { currentHoverOrder = GetOrderFromElement(e.currentTarget); });
-            editedLine.addEventListener("mouseleave", (e) => { currentHoverOrder = null; });
+            editedLine.addEventListener("dragend", (e) => { DragEnd(e); });
+            editedLine.addEventListener("mouseenter", (e) => { currentHoverOrder = GetOrderFromElement(e.currentTarget); SetOrderTools(e.currentTarget); });
+            editedLine.addEventListener("mousemove", (e) => { currentHoverOrder = GetOrderFromElement(e.currentTarget); SetOrderTools(e.currentTarget); });
+            editedLine.addEventListener("mouseleave", (e) => { currentHoverOrder = null;; SetOrderTools(null) });
 
+            /*
             var toolZone = document.createElement("div");
             toolZone.classList.add("toolZone");
             editedLine.appendChild(toolZone);
@@ -562,10 +653,10 @@ function UpdateTable(forceRedrawConditions = false) {
                 myOrder = GetOrderFromElement(e.currentTarget);
                 if (IsTaskPaused(myOrder, PAUSECHANNEL_ONETASK)) {
                     ResumeTask(myOrder, PAUSECHANNEL_ONETASK);
-                    UpdateTable();
+                    UpdateOrdersTable();
                 } else {
                     PauseTask(myOrder, PAUSECHANNEL_ONETASK);
-                    UpdateTable();
+                    UpdateOrdersTable();
                 }
             });
             AddKeyInfo(button, "(CTRL+SPACE)");
@@ -593,7 +684,7 @@ function UpdateTable(forceRedrawConditions = false) {
                 MarkEdited(myOrder);
                 if (config.toggleAutoSaveOrders)
                     QueueOrdersSave();
-                UpdateTable();
+                UpdateOrdersTable();
             });
             AddKeyInfo(button, "(CTRL+V)");
             toolZone.appendChild(button);
@@ -605,7 +696,7 @@ function UpdateTable(forceRedrawConditions = false) {
                 MarkEdited(myOrder);
                 if (config.toggleAutoSaveOrders)
                     QueueOrdersSave();
-                UpdateTable();
+                UpdateOrdersTable();
             });
             AddKeyInfo(button, "(CTRL+B)");
             toolZone.appendChild(button);
@@ -616,6 +707,7 @@ function UpdateTable(forceRedrawConditions = false) {
             });
             AddKeyInfo(button, "(CTRL+X)");
             toolZone.appendChild(button);
+            */
 
             //place edited line at the right order in parent
             const referenceNode = ordersTable.children[orderIndex + 1]; //+1 to skip header
@@ -663,9 +755,6 @@ function UpdateTable(forceRedrawConditions = false) {
         if (order.item_conditions === undefined)
             order.item_conditions = [];
 
-        if (order.material === undefined)
-            order.material = "";
-
         var possibleProperties = propertiesInfos.filter(prop => prop.visible);
         for (const property in order) {
 
@@ -690,8 +779,15 @@ function UpdateTable(forceRedrawConditions = false) {
                 } else {
                     cell.classList.remove("yesno");
                 }
-                editedLine.appendChild(cell);
+
+                if (property == "amount_total") {
+                    editedLine.insertBefore(cell, editedLine.querySelector(`.property.amount_left`));
+                } else {
+                    editedLine.appendChild(cell);
+                }
             }
+
+            cell.setAttribute("title", propInfo.displayName);
 
             if (propInfo.compactable)
                 cell.classList.add("optionalCol");
@@ -749,172 +845,28 @@ function UpdateTable(forceRedrawConditions = false) {
 
                 var input = editedLine.querySelector(`.property.${property} .inputNumber`);
                 if (!input) {
-                    input = CreateInputRaw(InputChangeCallback_PropertyValue, order, property, -1);
+                    input = CreateInputForOrders(InputChangeCallback_PropertyValue, order, property, -1);
+                    if (property != "amount_total")
+                        input.setAttribute("tabindex", "-1");
+
                     cell.appendChild(input);
+
                 }
                 input.value = order[property];
 
             } else if (property == "item_conditions") {
 
-                var i = 0;
 
                 var numDiv = editedLine.querySelector(`.property.${property} .conditionsNum`);
                 if (!numDiv) {
                     numDiv = document.createElement("div");
                     numDiv.classList.add("conditionsNum");
                     numDiv.addEventListener("mouseenter", (e) => { ConditionEditHover(e); });
-                    numDiv.addEventListener("mouseleave", (e) => { ConditionEditLeave(e); });
                     cell.appendChild(numDiv);
                 }
 
-                var conditions = order[property];
-
-                //remove all conditions that correspond to a PauseCondition object
-                conditions = conditions.filter(cond => !(cond.condition === pauseAll.condition && cond.value === pauseAll.value));
-                conditions = conditions.filter(cond => !(cond.condition === pauseFrom.condition && cond.value === pauseFrom.value));
-                conditions = conditions.filter(cond => !(cond.condition === pauseOne.condition && cond.value === pauseOne.value));
-
-                numDiv.textContent = conditions.length > 0 ? conditions.length + " cond." : "-";
-
-                //remove container if exists
-                container = editedLine.querySelector(`.property.${property} .conditionsContainer`);
-                if (!container || forceRedrawConditions) {
-                    if (container)
-                        container.remove();
-
-                    container = document.createElement("div");
-                    container.classList.add("conditionsContainer");
-                    cell.appendChild(container);
-                }
-
-                conditions.forEach(condition => {
-                    var conditionElement = editedLine.querySelector(`.property.${property} .conditionsContainer .condition[conditionIndex='${i}']`);
-                    if (!conditionElement) {
-                        conditionElement = document.createElement("div");
-                        conditionElement.classList.add("condition");
-                        conditionElement.setAttribute("conditionIndex", i);
-                        container.appendChild(conditionElement);
-                    }
-
-                    var partsHost = editedLine.querySelector(`.property.${property} .conditionsContainer .condition[conditionIndex='${i}'] .conditionPartsHost`);
-                    if (!partsHost) {
-                        partsHost = document.createElement("div");
-                        partsHost.classList.add("conditionPartsHost");
-                        partsHost.setAttribute("conditionIndex", conditions.indexOf(condition));
-
-                        var delButton = document.createElement("button");
-                        delButton.classList.add("btnCopy");
-                        delButton.textContent = "📋";
-                        delButton.addEventListener("mouseup", (e) => {
-                            e.stopPropagation();
-                            if (e.button == 0)
-                                CopyCondition(order, conditions.indexOf(condition));
-                        });
-                        partsHost.appendChild(delButton);
-
-                        var delButton = document.createElement("button");
-                        delButton.classList.add("btnDelete");
-                        delButton.textContent = "✖";
-                        delButton.addEventListener("mouseup", (e) => {
-                            e.stopPropagation();
-                            if (e.button == 0)
-                                DeleteCondition(order, conditions.indexOf(condition));
-                        });
-                        partsHost.appendChild(delButton);
-                        conditionElement.appendChild(partsHost);
-                    }
-
-
-                    for (const key of conditionParts) {
-                        if (key.endsWith("_element"))
-                            continue;
-
-                        condPartElement = editedLine.querySelector(`.property.${property} .conditionsContainer .condition[conditionIndex='${i}'] .conditionPartsHost .conditionPart.cond_${key}`);
-                        var mustAddListener = false;
-                        if (!condPartElement) {
-                            condPartElement = document.createElement("div");
-                            condPartElement.classList.add("conditionPart", "cond_" + key);
-                            mustAddListener = true;
-                            partsHost.appendChild(condPartElement);
-                        }
-
-                        var value = condition[key] ?? "";
-
-                        if (key == "value") {
-                            var input = editedLine.querySelector(`.property.${property} .conditionsContainer .condition[conditionIndex='${i}'] .conditionPartsHost .conditionPart.cond_value input`);
-                            if (!input) {
-                                input = CreateInputRaw(InputChangeCallback_ConditionValue, order, property, i);
-                                condPartElement.appendChild(input);
-                            }
-                            condition.value_element = input;
-                        } else {
-                            if (key == "condition") {
-                                condPartElement.textContent = condOperators.find(op => op.name === condition[key]).symbol;
-                            } else {
-                                condPartElement.textContent = value;
-                            }
-                            if (mustAddListener)
-                                (function (order, index) {
-                                    condPartElement.addEventListener("mouseup", (e) => {
-                                        e.stopPropagation();
-                                        if (e.button == 0)
-                                            ShowConditionEditor(order, index);
-                                    });
-                                })(order, conditions.indexOf(condition));
-
-                        }
-                    };
-                    if (condition.item_type == undefined) {
-                        var condPartElement = editedLine.querySelector(`.property.${property} .conditionsContainer .condition[conditionIndex='${i}'] .conditionPartsHost .conditionPart.cond_item_type`);
-
-                        if (!condPartElement) {
-                            condPartElement = document.createElement("div");
-                            condPartElement.classList.add("conditionPart", "cond_item_type");
-                            partsHost.appendChild(condPartElement);
-                        }
-                        condPartElement.textContent = "ANY_ITEM";
-                    }
-                    i++;
-                });
-
-                var buts = container.querySelectorAll(".buttons");
-                if (buts.length == 0) {
-                    buts = document.createElement("div");
-                    buts.classList.add("buttons");
-                } else {
-                    buts = buts[0];
-                }
-
-                var pasteCondButton = container.querySelectorAll(".btnAddCondition");
-                if (pasteCondButton.length == 0) {
-                    var button = document.createElement("button");
-                    button.textContent = "Paste";
-                    button.classList.add("btnPaste");
-                    button.addEventListener("mouseup", (e) => {
-                        e.stopPropagation();
-                        if (e.button == 0)
-                            PasteCondition(order);
-                    });
-                    buts.appendChild(button);
-                } else {
-                    buts.appendChild(pasteCondButton[0]);
-                }
-                var addCondButton = container.querySelectorAll(".btnAddCondition");
-                if (addCondButton.length == 0) {
-                    var button = document.createElement("button");
-                    button.textContent = "+";
-                    button.classList.add("btnAddCondition");
-                    button.addEventListener("mouseup", (e) => {
-                        e.stopPropagation();
-                        if (e.button == 0) AddCondition(order);
-                    });
-                    buts.appendChild(button);
-                } else {
-                    buts.appendChild(addCondButton[0]);
-                }
-
-                container.appendChild(buts);
-                container.querySelectorAll(".btnPaste")[0].classList.toggle("disabled", copiedCondition == null);
+                var conditions = GetOrderConditions(order);
+                UpdateConditionsContainer(order);
 
             } else {
 
@@ -984,6 +936,174 @@ function UpdateTable(forceRedrawConditions = false) {
 
 }
 
+function GetOrderConditions(order) {
+    var conditions = order.item_conditions;
+    //remove all conditions that correspond to a PauseCondition object
+    conditions = conditions.filter(cond => !(cond.condition === pauseAll.condition && cond.value === pauseAll.value));
+    conditions = conditions.filter(cond => !(cond.condition === pauseFrom.condition && cond.value === pauseFrom.value));
+    conditions = conditions.filter(cond => !(cond.condition === pauseOne.condition && cond.value === pauseOne.value));
+    return conditions;
+}
+
+function UpdateConditionsContainer(order) {
+    var conditions = GetOrderConditions(order);
+    var editedLine = ordersTable.querySelector(`div[orderId='${order.id}']`);
+    var cell = editedLine.querySelector(`.property.item_conditions`);
+    var property = "item_conditions"
+    //remove container if exists
+    container = editedLine.querySelector(`.property.${property} .conditionsContainer`);
+
+    if (container)
+        container.remove();
+
+    container = document.createElement("div");
+    container.classList.add("conditionsContainer");
+    cell.appendChild(container);
+
+    var i = 0;
+    conditions.forEach(condition => {
+        var conditionElement = editedLine.querySelector(`.property.${property} .conditionsContainer .condition[conditionIndex='${i}']`);
+        if (!conditionElement) {
+            conditionElement = document.createElement("div");
+            conditionElement.classList.add("condition");
+            conditionElement.setAttribute("conditionIndex", i);
+            container.appendChild(conditionElement);
+        }
+
+        var partsHost = editedLine.querySelector(`.property.${property} .conditionsContainer .condition[conditionIndex='${i}'] .conditionPartsHost`);
+        if (!partsHost) {
+            partsHost = document.createElement("div");
+            partsHost.classList.add("conditionPartsHost");
+            partsHost.setAttribute("conditionIndex", conditions.indexOf(condition));
+
+            var delButton = document.createElement("button");
+            delButton.classList.add("btnCopy");
+            delButton.textContent = "📋";
+            delButton.addEventListener("mouseup", (e) => {
+                e.stopPropagation();
+                if (e.button == 0)
+                    CopyCondition(order, conditions.indexOf(condition));
+            });
+            partsHost.appendChild(delButton);
+
+            var delButton = document.createElement("button");
+            delButton.classList.add("btnDelete");
+            delButton.textContent = "✖";
+            delButton.addEventListener("mouseup", (e) => {
+                e.stopPropagation();
+                if (e.button == 0)
+                    DeleteCondition(order, conditions.indexOf(condition));
+            });
+            partsHost.appendChild(delButton);
+            conditionElement.appendChild(partsHost);
+        }
+
+
+        for (const key of conditionParts) {
+            if (key.endsWith("_element"))
+                continue;
+
+            condPartElement = editedLine.querySelector(`.property.${property} .conditionsContainer .condition[conditionIndex='${i}'] .conditionPartsHost .conditionPart.cond_${key}`);
+            var mustAddListener = false;
+            if (!condPartElement) {
+                condPartElement = document.createElement("div");
+                condPartElement.classList.add("conditionPart", "cond_" + key);
+                mustAddListener = true;
+                partsHost.appendChild(condPartElement);
+            }
+
+            var value = condition[key] ?? "";
+
+            if (key == "value") {
+                var input = editedLine.querySelector(`.property.${property} .conditionsContainer .condition[conditionIndex='${i}'] .conditionPartsHost .conditionPart.cond_value input`);
+                if (!input) {
+                    input = CreateInputForOrders(InputChangeCallback_ConditionValue, order, property, i);
+                    condPartElement.appendChild(input);
+                }
+                condition.value_element = input;
+            } else {
+                if (key == "condition") {
+                    condPartElement.textContent = condOperators.find(op => op.name === condition[key]).symbol;
+                } else {
+                    condPartElement.textContent = value;
+                }
+                if (mustAddListener)
+                    (function (order, index) {
+                        condPartElement.addEventListener("mouseup", (e) => {
+                            e.stopPropagation();
+                            if (e.button == 0)
+                                ShowConditionEditor(order, index);
+                        });
+                    })(order, conditions.indexOf(condition));
+
+            }
+        };
+        if (condition.item_type == undefined) {
+            var condPartElement = editedLine.querySelector(`.property.${property} .conditionsContainer .condition[conditionIndex='${i}'] .conditionPartsHost .conditionPart.cond_item_type`);
+
+            if (!condPartElement) {
+                condPartElement = document.createElement("div");
+                condPartElement.classList.add("conditionPart", "cond_item_type");
+                partsHost.appendChild(condPartElement);
+            }
+            condPartElement.textContent = "ANY_ITEM";
+        }
+        i++;
+    });
+
+    var buts = container.querySelectorAll(".buttons");
+    if (buts.length == 0) {
+        buts = document.createElement("div");
+        buts.classList.add("buttons");
+    } else {
+        buts = buts[0];
+    }
+
+    var pasteCondButton = container.querySelectorAll(".btnAddCondition");
+    if (pasteCondButton.length == 0) {
+        var button = document.createElement("button");
+        button.textContent = "Paste";
+        button.classList.add("btnPaste");
+        button.addEventListener("mouseup", (e) => {
+            e.stopPropagation();
+            if (e.button == 0)
+                PasteCondition(order);
+        });
+        buts.appendChild(button);
+    } else {
+        buts.appendChild(pasteCondButton[0]);
+    }
+    var addCondButton = container.querySelectorAll(".btnAddCondition");
+    if (addCondButton.length == 0) {
+        var button = document.createElement("button");
+        button.textContent = "+";
+        button.classList.add("btnAddCondition");
+        button.addEventListener("mouseup", (e) => {
+            e.stopPropagation();
+            if (e.button == 0) AddCondition(order);
+        });
+        buts.appendChild(button);
+    } else {
+        buts.appendChild(addCondButton[0]);
+    }
+
+    var numDiv = editedLine.querySelector(`.property.${property} .conditionsNum`);
+    numDiv.textContent = conditions.length > 0 ? "" + conditions.length + "c" : "";
+
+    container.appendChild(buts);
+    container.querySelectorAll(".btnPaste")[0].classList.toggle("disabled", copiedCondition == null);
+}
+
+function UpdateOrdersLabels() {
+    var labels = document.querySelectorAll(".orderRow .property.job");
+    labels.forEach(label => {
+        var order = GetOrderFromElement(label.closest(".orderRow"));
+        if (order)
+            label.innerHTML = GetOrderJobLabel(order);
+    });
+}
+
+
 function AddCondition(order) {
     condition = {
         "condition": "GreaterThan",
@@ -1000,14 +1120,14 @@ function AddCondition(order) {
     if (config.toggleAutoSaveOrders)
         QueueOrdersSave(true);
 
-    UpdateTable();
+    UpdateOrdersTable();
     ShowConditionEditor(order, order.item_conditions.length - 1);
 }
 
 function DeleteCondition(order, conditionIndex) {
     order.item_conditions.splice(conditionIndex, 1);
     MarkEdited(order);
-    UpdateTable(true);
+    UpdateConditionsContainer(order);
 
     if (config.toggleAutoSaveOrders)
         QueueOrdersSave();
@@ -1016,6 +1136,7 @@ function DeleteCondition(order, conditionIndex) {
 function CopyCondition(order, conditionIndex) {
     copiedCondition = order.item_conditions[conditionIndex];
     conditionJustCopied = true;
+    UpdateConditionsContainer(order);
 }
 
 function PasteCondition(order) {
@@ -1024,7 +1145,8 @@ function PasteCondition(order) {
 
     order.item_conditions.push(copiedCondition);
     MarkEdited(order);
-    UpdateTable(true);
+    UpdateConditionsContainer(order);
+
     if (config.toggleAutoSaveOrders)
         QueueOrdersSave(true);
 }
@@ -1038,8 +1160,8 @@ function ShowConditionEditor(order, conditionIndex) {
     condition = order.item_conditions[conditionIndex];
     if (!condition)
         return;
-    editedConditionsOrder = order;
-    editedConditionsIndex = conditionIndex;
+    openedConditionsOrder = order;
+    openedConditionsIndex = conditionIndex;
     var editor = $(".conditionEditor")[0];
 
     $("#conditionEditorTitle")[0].textContent = GetOrderJobLabel(order) + " : " + GetOrderMaterialLabel(order);
@@ -1054,56 +1176,31 @@ function ShowConditionEditor(order, conditionIndex) {
 }
 
 
-function QueueOrdersSave(immediate = false) {
-    mustWriteOrders = true;
-    if (immediate)
-        WriteOrders();
-}
-
-async function ReadWriteWatcher() {
-    var currentFileAccess = Date.now();
-    if (lastFileAccess == undefined)
-        lastFileAccess = currentFileAccess;
-
-    var timePassed = currentFileAccess - lastFileAccess;
-    if (timePassed < DELAY_BETWEEN_FILE_OPS_MS) {
-        return;
-    }
-
-    //check if any condition editor is opened
-    var hovered = editedConditionsOrder != null || document.querySelector(".conditionEditor:hover") || document.querySelector(".item_conditions:hover");
-    if (hovered != null || waitForOrdersOperation)
-        return;
-
-    if (mustWriteOrders) {
-        mustWriteOrders = false;
-        lastFileAccess = Date.now();
-        await WriteOrders();
-        lastFileAccess = Date.now();
-    } else if (mustReadOrders || config.toggleAutoReadOrders) {
-        mustReadOrders = false;
-        lastFileAccess = Date.now();
-        await ReadOrders();
-        lastFileAccess = Date.now();
-    }
-
-}
-
 function CancelOrderChanges() {
     orders = [];
     ReadOrders();
 }
 
 async function ReadOrders() {
+
+    if (waitForOrdersOperation)
+        return;
+
     waitForOrdersOperation = true;
 
+    TraceActivity("Reading production orders...");
     json = await window.api.ReadOrdersFile();
-    TraceActivity("Reading prod.orders...");
 
-    if (json == undefined) {
+    if (json == null) {
         waitForOrdersOperation = false;
         return;
     }
+
+    if (CheckError(json, "ReadOrders")) {
+        waitForOrdersOperation = false;
+        return;
+    }
+    ClosePopInfoWaiting("ReadOrders");
 
     newOrders = JSON.parse(json);
     if (orders != null && orders.length > 0) {
@@ -1123,8 +1220,10 @@ async function ReadOrders() {
                 propertiesInfos.forEach(prop => {
                     if (JSON.stringify(oldLine[prop.name]) != JSON.stringify(matchingNewLine[prop.name])) {
                         oldLine[prop.name] = matchingNewLine[prop.name];
-                        if (prop.name === "item_conditions" && editedConditionsOrder != null && editedConditionsOrder.id == oldLine.id)
+                        if (prop.name === "item_conditions" && openedConditionsOrder != null && openedConditionsOrder.id == oldLine.id) {
+                            //order conditions have changed game side, close condition editor if open
                             BackgroundClicked();
+                        }
                     }
                 });
             }
@@ -1142,9 +1241,14 @@ async function ReadOrders() {
         orders = newOrders;
     }
 
-    UpdateWantedProduction();
+    orders.forEach(order => {
+        if (order.item_subtype == "ITEM_ARMOR_ROBE")
+            order.item_subtype = "ITEM_ARMOR_DRESS";
+    });
 
-    UpdateTable();
+    UpdateOrdersTable();
+
+    TraceActivity("Reading production: completed.");
     waitForOrdersOperation = false;
 }
 
@@ -1178,9 +1282,26 @@ async function WriteOrders() {
         DeleteEmptyKeys(order);
     });
 
-    await window.api.WriteOrdersFile(JSON.stringify(clonedOrders, null, 2));
+    if (config.debugNoWrite) {
+        cl(JSON.stringify(clonedOrders, null, 2));
+    } else {
+        cl(JSON.stringify(clonedOrders, null, 2));
+        await window.api.WriteOrdersFile(JSON.stringify(clonedOrders, null, 2));
+    }
+    TraceActivity("Writing orders: completed.");
     waitForOrdersOperation = false;
-    UpdateTable();
+
+    //clear new pushed orders
+    var news = $(".orderRow.new").length;
+    if (news) {
+        await pause(300);
+        await ReadOrders();
+        orders.filter(o => o.isNew).forEach(o => orders.splice(orders.indexOf(o), 1));
+        $(".orderRow.new").forEach(el => el.remove());
+    }
+    $(".editable.updating").forEach(el => el.classList.remove("updating"));
+
+    UpdateOrdersTable();
 }
 
 function DeleteEmptyKeys(obj) {
@@ -1209,6 +1330,10 @@ function CloneOrdersNoDom(orders) {
         const out = {};
         for (const k in orders) {
             if (k.endsWith("_cell") || k.endsWith("_element"))
+                continue;
+            if (k == "isNew" || k == "orderHovered")
+                continue;
+            if (k == "max_workshops" && orders[k] === 0)
                 continue;
             const v = CloneOrdersNoDom(orders[k]);
             if (v !== undefined)
@@ -1267,7 +1392,7 @@ function ReloadCss() {
 }
 
 
-function CreateInputRaw(onChangeCallback, orderObject, affectedProperty, conditionIndex = -1) {
+function CreateInputForOrders(onChangeCallback, orderObject, affectedProperty, conditionIndex = -1) {
     input = document.createElement("input");
     input.type = "number";
     input.value = conditionIndex > -1 ? orderObject["item_conditions"][conditionIndex].value : orderObject[affectedProperty];
@@ -1297,18 +1422,6 @@ function PrepareInput(input, onChangeCallback) {
     });
     input.addEventListener("mouseup", (e) => {
         e.stopPropagation();
-    });
-    input.addEventListener("wheel", (e) => {
-        e.preventDefault();
-        var delta = Math.sign(e.deltaY);
-        if (isShiftPressed)
-            delta *= 5;
-        var curVal = e.target.value;
-        curVal = curVal === "" ? 0 : curVal;
-        var newValue = Math.max(0, parseInt(curVal) - delta);
-        e.target.value = newValue;
-        var event = new Event('change');
-        e.target.dispatchEvent(event);
     });
 
     if (onChangeCallback != null) {
@@ -1344,6 +1457,7 @@ function InputChangeCallback_ConditionValue(e) {
 function MarkEdited(order) {
     order.edited = true;
     var line = ordersTable.querySelector(`div[orderId='${order.id}']`);
+
     if (line)
         line.classList.add("edited");
 }
@@ -1351,7 +1465,7 @@ function MarkEdited(order) {
 
 function GetOrderFromElement(element) {
     var id = element.closest(".orderRow")?.getAttribute("orderId");;
-    return orders.find(o => o.id == id);
+    return orders.find(o => o != null && o.id == id);
 }
 
 
@@ -1367,7 +1481,7 @@ function PauseAllTasks() {
             ResumeTask(order, PAUSECHANNEL_ALLSTASKS);
         }
     });
-    UpdateTable();
+    UpdateOrdersTable();
 }
 
 function PauseAllTasksFrom(myOrder) {
@@ -1386,7 +1500,7 @@ function PauseAllTasksFrom(myOrder) {
             PauseTask(order, PAUSECHANNEL_FROMTASK);
         }
     }
-    UpdateTable();
+    UpdateOrdersTable();
 }
 
 function PauseTask(order, stopChannel = 0) {
@@ -1446,11 +1560,43 @@ function Show(elements) {
     });
 }
 
-function FilterJobs(searchTerm) {
-    var orderLines = $(".ordersTable .orderRow");
-    orderLines.forEach(line => {
-        if (line.classList.contains("header"))
+
+function OnRightClickOrEscape() {
+    var stockMatPicker = $(".inventoryMaterialsPickerHost:not(.hidden)")[0];
+    if (stockMatPicker) {
+        var pickerInput = $("#inventoryMaterialsFilter")[0];
+        if (pickerInput.value != "") {
+            pickerInput.value = "";
+            pickerInput.dispatchEvent(new Event("change"));
             return;
+        }
+        stockMatPicker.classList.add("hidden");
+        ApplyInventoryMaterialFilters();
+    }
+
+    $("#ordersFilter")[0].value = "";
+    $("#ordersFilter")[0].dispatchEvent(new Event("change"));
+}
+
+function FilterChanged(search) {
+    var timeSinceLastchange = Date.now() - lastFilterChange;
+    if (timeSinceLastchange < 300) {
+        //debounce
+        if (filterDelayer)
+            clearTimeout(filterDelayer);
+        filterDelayer = setTimeout(() => { FilterChanged(search); }, 300 - timeSinceLastchange);
+        return;
+    }
+    search = search.toLowerCase();
+    FilterJobs(search);
+    UpdateInventoryItemFilter(search);
+    lastFilterChange = Date.now();
+}
+
+
+function FilterJobs(searchTerm) {
+    var orderLines = ordersTable.querySelectorAll(".orderRow");
+    orderLines.forEach(line => {
         var jobCell = line.querySelector(".property.job");
         var jobName = jobCell ? jobCell.textContent.toLowerCase() : "";
         if (jobName.includes(searchTerm)) {
@@ -1462,11 +1608,12 @@ function FilterJobs(searchTerm) {
 }
 
 
-function SetAutoFill(input, category, allowMultiples) {
+function SetAutoFill(input, sourceData, allowMultiples) {
     $(".autocompleteList").forEach(el => el.innerHTML = "");
 
     multiFill = allowMultiples;
-    autoFillSource[input.getAttribute("id")] = category;
+    autoFillSource[input.getAttribute("id")] = sourceData;
+    fuses[input.getAttribute("id")] = new Fuse(sourceData);
     currendFuseInput = input;
     if (currendFuseInput != null)
         currendFuseInput.removeEventListener("input", AutoFillFieldChanged);
@@ -1477,7 +1624,6 @@ function AutoFillFieldChanged(event) {
     var input = event.target;
     var id = input.getAttribute("id");
     var data = autoFillSource[input.getAttribute("id")];
-    fuses[id] ??= new Fuse(data);
     var tags = input.value.split(",");
     var results = fuses[id].search(tags[tags.length - 1].trim());
     var list = input.nextElementSibling;
@@ -1508,10 +1654,11 @@ function AutoFillFieldChanged(event) {
 }
 
 function CloseAutoFill(input) {
-    var category = input.getAttribute("category");
+    cl("close autofill" + input.getAttribute("id"));
+    var sourceData = autoFillSource[input.getAttribute("id")];
 
     var list = input.nextElementSibling;
-    if (input.getAttribute("pickEnter") && enterKeyDown) {
+    if (input.getAttribute("pickOnBlur")) {
         var firstItem = list.querySelector(".autocompleteItem");
         if (firstItem) {
             if (multiFill && input.value.trim() != "") {
@@ -1529,9 +1676,10 @@ function CloseAutoFill(input) {
         tags = [...new Set(tags)];
 
         var validTags = [];
+
         if (tags) {
             tags.forEach(tag => {
-                if (data[category].findIndex(v => v == tag) != -1) {
+                if (sourceData.findIndex(v => v == tag) != -1) {
                     validTags.push(tag);
                     if (!multiFill)
                         return;
@@ -1541,6 +1689,7 @@ function CloseAutoFill(input) {
 
         input.value = validTags.join(",");
     }
+    list.innerHTML = "";
     var event = new Event("change");
     input.dispatchEvent(event);
 
@@ -1548,8 +1697,8 @@ function CloseAutoFill(input) {
 
 
 function ConditionEdited(elem) {
-    var order = editedConditionsOrder;
-    var condition = order.item_conditions[editedConditionsIndex];
+    var order = openedConditionsOrder;
+    var condition = order.item_conditions[openedConditionsIndex];
     var property = elem.getAttribute("property");
     MarkEdited(order);
 
@@ -1571,21 +1720,20 @@ function ConditionEdited(elem) {
 
 function ConditionEditHover(e) {
     var order = GetOrderFromElement(e.currentTarget);
-    order.conditionsHovered = true;
+
+    hoveredConditionsOrder = order;
+    cl(order.id);
+    UpdateConditionsContainer(order);
 }
 
-function ConditionEditLeave(e) {
-    var order = GetOrderFromElement(e.currentTarget);
-    order.conditionsHovered = false;
-}
 
 function CloseConditionEditor() {
     $(".conditionEditor")[0].classList.add("hidden");
 
-    if (editedConditionsOrder != null)
-        UpdateTable();
+    if (openedConditionsOrder != null)
+        UpdateOrdersTable();
 
-    editedConditionsOrder = null;
+    openedConditionsOrder = null;
 }
 
 function CreateNewOrder(orderToDuplicate = null) {
@@ -1624,10 +1772,12 @@ function AddNewOrder(newOrder, afterOrder = null) {
         orders.push(newOrder);
     }
 
-    newOrder.id = orders.reduce((maxId, o) => Math.max(maxId, o.id), 0) + 1;
-    MarkEdited(newOrder);
+    newOrder.id = Math.max(...orders.filter(o => o.id != null).map(o => o.id), 10) + 1;
+    if (isNaN(newOrder.id))
+        newOrder.id = 10;
 
-    UpdateTable();
+    MarkEdited(newOrder);
+    UpdateOrdersTable();
 
     if (config.toggleAutoSaveOrders)
         QueueOrdersSave();
@@ -1640,6 +1790,7 @@ function AddNewOrder(newOrder, afterOrder = null) {
 }
 
 async function GetConfig() {
+
     config = await window.api.GetSetConfig();
 
     var mustSave = false;
@@ -1660,7 +1811,7 @@ async function GetConfig() {
     if (mustSave)
         config = await window.api.GetSetConfig(config);
 
-    return config;
+    return true;
 }
 
 async function SaveConfig() {
@@ -1683,6 +1834,7 @@ async function ToggleOption(name, noSwitch = false) {
     if (CheckError(config))
         return;
 
+
     if (name == "toggleAutoReadOrders" && config.toggleAutoReadOrders) {
         mustReadOrders = true
     }
@@ -1693,7 +1845,7 @@ async function ToggleOption(name, noSwitch = false) {
     ApplyConfigClasses()
 }
 
-function ApplyConfigClasses() {
+async function ApplyConfigClasses() {
     //remove all toggle classes from body
     var togClasses = Array.from($("body")[0].classList).filter(c => c.startsWith("toggle_"));
     togClasses.forEach(c => $("body")[0].classList.remove(c));
@@ -1702,6 +1854,8 @@ function ApplyConfigClasses() {
         if (optionName.startsWith("toggle"))
             $("body")[0].classList.toggle(optionName, config[optionName] === true);
     });
+
+    await CycleSizeMode(true);
 }
 
 function ToggleAutoRead() {
@@ -1727,7 +1881,7 @@ function DeleteTask(order) {
     }
     if (config.toggleAutoSaveOrders)
         QueueOrdersSave();
-    UpdateTable();
+    UpdateOrdersTable();
 }
 
 
@@ -1735,59 +1889,33 @@ function DeleteTask(order) {
 function SetTab(tab) {
     displayedTab = tab;
 
-    $("#tabBoard")[0].classList.remove("active");
-    $("#tabRaw")[0].classList.remove("active");
-    $(".boardMode")[0].classList.add("hidden");
-    $(".rawMode")[0].classList.add("hidden");
+    $("body")[0].classList.remove("tab_inventoryOpened");
+    $("body")[0].classList.remove("tab_ordersOpened");
 
     switch (tab) {
-        case "board":
-            $("#tabBoard")[0].classList.add("active");
-            $(".boardMode")[0].classList.remove("hidden");
+        case "inventory":
+            $("body")[0].classList.add("tab_inventoryOpened");
             break;
 
         default:
-            $("#tabRaw")[0].classList.add("active");
-            $(".rawMode")[0].classList.remove("hidden");
+            $("body")[0].classList.add("tab_ordersOpened");
             break;
-    }
-}
-
-function BackgroundClicked() {
-
-    switch (displayedTab) {
-        case "board":
-            var picker = $(".boardMaterialsPickerHost")[0];
-            if (!picker.classList.contains("hidden")) {
-                picker.classList.add("hidden");
-            } else {
-                $(".boardTableHeader .corner input")[0].value = ''
-                $(".boardTableHeader .corner input")[0].focus();
-                UpdateBoardItemFilter('');
-            }
-            break;
-
-        case "raw":
-            var searchInput = $(".ordersTable .searchInput")[0];
-            if (searchInput) {
-                searchInput.focus();
-                FilterJobs("");
-            }
-            break;
-
     }
 }
 
 async function CycleSizeMode(noChange) {
-    if (previousSizeMode != undefined) {
+    if (previousSizeMode != undefined)
         $("body")[0].classList.remove("sizemode_" + previousSizeMode);
-    }
-    var size = await window.api.CycleSizeMode(noChange);
-    if (CheckError(size))
-        return;
 
-    $("body")[0].classList.add("sizemode_" + size);
-    previousSizeMode = size;
+    if (!noChange)
+        config.sizeMode++;
+
+    if (config.sizeMode > 3)
+        config.sizeMode = 0;
+    SaveConfig();
+
+    $("body")[0].classList.add("sizemode_" + config.sizeMode);
+    previousSizeMode = config.sizeMode;
 }
 
 function CreateRowButton(classes, text, callback) {
@@ -1796,7 +1924,9 @@ function CreateRowButton(classes, text, callback) {
     classes.forEach(c => buttonHost.classList.add(c));
 
     var button = document.createElement("div");
-    button.textContent = text;
+    var span = document.createElement("span");
+    span.textContent = text;
+    button.appendChild(span);
     buttonHost.appendChild(button);
 
     buttonHost.addEventListener("mouseup", (e) => {
@@ -1809,16 +1939,6 @@ function CreateRowButton(classes, text, callback) {
     return buttonHost;
 }
 
-function GetOrderJobLabel(order) {
-    var text = order["reaction"] ? order["reaction"] : order["job"];
-    if (text.startsWith("Make") && order["item_subtype"] != undefined)
-        text = order["item_subtype"];
-
-    if (text == "PrepareMeal")
-        text += " (" + order.meal_ingredients + " ingredients)";
-
-    return text;
-}
 
 function GetOrderMaterialLabel(order) {
     var text = "";
@@ -1838,146 +1958,387 @@ function GetOrderMaterialLabel(order) {
 
 
 function ChangeWantedProduction(e) {
-    /*
-    var item = e.target.getAttribute("itemType");
-    var mat = e.target.getAttribute("material");
-    if (!wantedProduction[item])
-        wantedProduction[item] = {};
-    wantedProduction[item][mat] = parseInt(e.target.value);
-    var cell = e.target.closest(".boardCell");
-    cell.setAttribute("totalVal", (stocks[item][mat] ? stocks[item][mat] : 0) + wantedProduction[item][mat]);
-    */
+
+    var input = e.target;
+    var qttDesired = parseInt(input.value);
+    var cell = input.closest(".editable");
+    var jobId = cell.getAttribute("jobId");
+
+    cell.classList.add("updating");
+
+    var job = jobs[jobId];
+    if (!job) {
+        cl("Unknown job: " + jobId);
+        return;
+    }
+
+    var matchingOrders = FindActiveOrdersForJob(job);
+
+    var ord;
+    if (matchingOrders.length > 0) {
+        ord = matchingOrders[0];
+        cl("existing order found")
+
+    } else {
+        ord = CreateNewOrder();
+        ord.job = job.jobTypeName;
+        var item = job.io?.out?.[0]?.item;
+        if (item && item.subtypeName)
+            ord.item_subtype = item.subtypeName;
+        ord.frequency = "Daily";
+        if (job.material_category)
+            ord.material_category = job.material_category;
+        if (job.material)
+            ord.material = job.material;
+
+        if (job.reactionName)
+            ord.reaction = job.reactionName;
+
+        AddNewOrder(ord);
+        cl("new order")
+    }
+
+    let min = Math.min(GetOrderBatchSize(), qttDesired);
+    ord.amount_total = min;
+    ord.amount_left = min;
+    cl(ord);
+
+    ChangeDesiredOrderQuantity(ord, qttDesired, job);
+}
+
+function ChangeDesiredOrderQuantity(order, qttDesired, stockTask) {
+
+    if (stockTask) {
+
+        //stock goal: change the conditions for the order to stop producing
+        order.item_conditions = GetJobConditions(stockTask, qttDesired);
+
+    } else {
+
+        //direct quantity order : change the amount_total and amount_left
+        var oldQtt = order.amount_total;
+        order.amount_total = qttDesired;
+        var diff = qttDesired - oldQtt;
+        cl("Chainging desired quantity from " + oldQtt + " to " + qttDesired);
+        if (diff == 0)
+            return;
+        order.amount_left += diff;
+    }
+
+    var orderLine = ordersTable.querySelector(`div[orderId='${order.id}']`);
+    if (!orderLine) {
+        cl("Cannot find order line for order #" + order.id);
+        return;
+    }
+    orderLine.querySelector(".property.amount_left .inputNumber").value = order.amount_left;
+    orderLine.querySelector(".property.amount_total .inputNumber").value = order.amount_total;
+    cl("Changed order " + order.id + ":" + order.job + " quantity target to " + order.amount_total + ", left: " + order.amount_left);
+    MarkEdited(order);
+};
+
+function GetJobConditions(job, qttDesired) {
+
+    var conditions = [];
+    job.io.in.forEach(inp => {
+        var condition = {
+            "condition": "GreaterThan",
+            "value": Math.min(GetOrderBatchSize(), qttDesired)
+        }
+
+        Object.keys(inp).forEach(key => {
+            if (key == "item") {
+                var item = inp[key];
+                if (item.typeName)
+                    condition["item_type"] = item.typeName;
+                if (item.subtypeName)
+                    condition["item_subtype"] = item.subtypeName;
+                if (item.flags)
+                    condition["flags"] = item.flags;
+
+                return;
+            }
+
+            if (key == "quantity") {
+                return;
+            } else {
+                condition[key] = inp[key];
+            }
+        });
+
+        conditions.push(condition);
+    });
+
+    if (job.isCrafts) {
+        craftTypes.forEach(craftType => {
+            cl("prout");
+            var condition = {
+                "condition": "LessThan",
+                "item_type": craftType,
+                "value": qttDesired,
+            }
+            if (job.material)
+                condition["material"] = job.material;
+            if (job.material_category && job.material_category.length > 0)
+                condition["material_category"] = job.material_category;
+            conditions.push(condition);
+        });
+    } else {
+        job.io.out.forEach(outp => {
+            var condition = {
+                "condition": "LessThan",
+                "value": qttDesired
+            }
+            Object.keys(outp).forEach(key => {
+                if (key == "item") {
+                    var item = outp[key];
+                    if (item.typeName)
+                        condition["item_type"] = item.typeName;
+                    if (item.subtypeName)
+                        condition["item_subtype"] = item.subtypeName;
+                    if (item.material)
+                        condition["material"] = item.material;
+
+                    return;
+                }
+            });
+            conditions.push(condition);
+        });
+    }
+    return conditions;
+}
+
+function GetOrderBatchSize() {
+    if (!config.orderBatchSize) {
+        config.orderBatchSize = 6;
+        SaveConfig();
+    }
+    return config.orderBatchSize;
+}
+
+function FindActiveOrdersForJob(job) {
+    return orders.filter(order => {
+        if (order.job != job.jobTypeName)
+            return false;
+
+        if ((order.item_subtype ?? '') != (job.item_typeName ?? ''))
+            return false;
+
+        if (order.material_category != null && order.material_category.length > 0) {
+            if (!job.material_category || job.material_category.length == 0 || (order.material_category[0] != job.material_category[0]))
+                return false;
+        }
+
+        if (order.material != job.material && job.material != '')
+            return false;
+
+        return true;
+    });
+}
+
+function CleanupDuplicateJobs() {
+    Object.values(orders).forEach(orderA => {
+        if (orderA.deleted)
+            return;
+
+        let targetCount = orderA.amount_total;
+        let leftCount = orderA.amount_left;
+        let mergeds = [];
+
+        Object.values(orders).forEach(orderB => {
+            if (orderB.deleted)
+                return;
+
+            if (orderA.id == orderB.id)
+                return;
+
+            if (orderA.job != orderB.job
+                || orderA.material != orderB.material
+                || (orderA.material_category && orderB.material_category && orderA.material_category.toString() != orderB.material_category.toString())
+                || orderA.item_type != orderB.item_type
+                || orderA.item_subtype != orderB.item_subtype
+                || orderA.reaction != orderB.reaction)
+                return;
+
+            targetCount += orderB.amount_total;
+            leftCount += orderB.amount_left;
+
+            DeleteTask(orderB);
+            mergeds.push(orderB.id)
+        });
+
+        if (orderA.amount_total != targetCount || orderA.amount_left != leftCount) {
+            orderA.amount_total = targetCount;
+            orderA.amount_left = leftCount;
+            MarkEdited(orderA);
+        }
+
+        if (mergeds.length > 0) {
+            alert("Merged " + mergeds.length + " order(s) into #" + orderA.id + " (" + orderA.job + "):\n\n> " + mergeds.join(",\n-"));
+            return;
+        }
+
+    });
 }
 
 
-function ItemLabelNoGroup(itemName) {
+function StockEntryLabelGroup(fullName) {
+    let itemName = fullName.split("!").last();
+    var item = gm.items[itemName]
+    if (!item) {
+        cl("Unknown item: " + itemName);
+        return fullName;
+    }
+
+    itemName = item.name.toUpperCase();
     itemName = itemName.replace("ITEM_", "");
+    itemName = itemName.replace("WEAPON_", "");
+    itemName = itemName.replace("TOOL_", "");
+    itemName = itemName.replace("AMMO_", "");
+    itemName = itemName.replace("ARMOR_", "");
+    itemName = itemName.replace("HELM_", "");
+    itemName = itemName.replace("PANTS_", "");
+    itemName = itemName.replace("SHIELD_", "");
+    itemName = itemName.replace("SHOES_", "");
+    itemName = itemName.replace("SIEGEAMMO_", "");
     itemName = itemName.replace(/_/g, " ");
-    itemName = itemName.split(":")
-    return itemName[itemName.length - 1];
+    itemName = itemName.charAt(0).toUpperCase() + itemName.slice(1).toLowerCase();
+
+    if (!item.isTypeOnly) {
+        let groupName = ItemGroupName(item);
+        return (groupName != "" ? "<b>" + groupName + "</b>" : "") + itemName;
+    } else {
+        return itemName;
+    }
+
 }
 
-function ItemLabelGroup(itemName) {
+function ItemGroupName(item) {
+    //cl(item)
+    let name = item.typeName;
+    return name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
+}
+
+
+function ItemNameWithoutPrefix(itemName) {
     itemName = itemName.replace("ITEM_", "");
     itemName = itemName.replace(/_/g, " ");
     return itemName;
 }
 
-async function ReadJobsBatch() {
+function CleanupJobsData() {
+
+    sortedJobTypes = [];
+    Object.values(gm.job_type).forEach(jobType => {
+        sortedJobTypes.push(jobType);
+    });
+    sortedJobTypes.sort();
+
+    itemJob = []
+    jobSortedNames = []
+    var i = 0;
+    jobs.forEach(job => {
+        CompleteJobInfos(job);
+
+        jobSortedNames.push(job.name);
+
+        job.index = i;
+        i++;
+    });
+    jobSortedNames.sort();
+
+    //CheckJobsValidity();
+}
+
+async function TryReadStocks() {
+
+    if (!config.toggleAutoReadStocks && !mustReadStocks)
+        return;
+
     if (readingStocks)
         return;
 
+    mustReadStocks = false;
     readingStocks = true;
-    await window.api.GetJobsInfos().then((data) => {
+    tempStocks = {};
 
-        if (data == null) {
-            cl("error: null data");
-            _jobsReady = true;
-        } else if (jobs == null) {
-            jobs = data;
-        } else {
-            data.jobs.forEach(job => {
-                jobs.jobs.push(job);
-            });
-        }
-        if (data.completed) {
-            _jobsReady = true;
-            jobs = jobs.jobs;
+    let ok = false;
+    while (!ok) {
+        ok = await ReadStocksBatch();
+        if (!ok)
+            await pause(150);
+    }
 
-            jobs.forEach(job => {
-                job.reaction = gameInfo.reactions[job.reactionName];
-                job.jobTypeName = gameInfo.job_type[job.jobType];
-                job.mat_name = gameInfo.materials[job.mat_index] != null ? gameInfo.materials[job.mat_index] : "";
-                if (job.reaction != null) {
-                    if (job.reaction.products != null) {
-                        job.reaction.products.forEach(prod => {
-                            prod.itemTypeName = gameInfo.itemTypes[prod.itemType] || "ANY";
-                        });
-                    }
-                    if (job.reaction.reagents != null) {
-                        job.reaction.reagents.forEach(reagent => {
-                            reagent.itemTypeName = gameInfo.itemTypes[reagent.itemType] || "ANY";
-                            reagent.flags = [];
-                        });
-                    }
-                }
-            });
-        }
-
-    }).catch((err) => {
-
-        cl("error reading jobs: " + err);
-        readingStocks = false;
-        _jobsReady = true;
-
-    }).finally(() => {
-
-        readingStocks = false;
-    });
+    readingStocks = false;
 }
 
 async function ReadStocksBatch() {
-    if (readingStocks)
-        return;
-
     TraceActivity("Reading stocks...");
 
-    readingStocks = true;
-    await window.api.GetStocks().then((data) => {
-        if (data) {
-            Object.keys(data.stocks).forEach(key => {
-                var itemName = key.split("@")[0];
-                var matName = key.split("@")[1];
-                var quantity = data.stocks[key];
-                tempStocks[itemName] ??= {};
-                tempStocks[itemName][matName] = quantity;
-            });
+    data = await window.api.GetStocks()
+    //cl(data);
 
-            if (data.completed) {
-                stockReadcompleted = true;
-                TraceActivity("Reading stocks completed.");
-            };
-        }
-    }).finally(() => {
-        readingStocks = false;
+    if (data == null)
+        return false;
 
-        if (!stockReadcompleted) {
-            setTimeout(() => {
-                ReadStocksBatch();
-            }, 150);
-        } else {
-            stockReadcompleted = false
-            stocksMaterials = [];
-            stockArray = []
-            for (const item in tempStocks) {
-                stockArray.push({ item: item, mats: tempStocks[item] });
-            }
-            stockArray.sort((a, b) => {
-                return ItemLabelGroup(a.item).localeCompare(ItemLabelGroup(b.item));
-            });
+    if (CheckError(data, "Stocks")) {
+        await pause(1500);
+        return false;
+    }
+    ClosePopInfoWaiting("Stocks");
 
-            stocks = {};
+    Object.keys(data.stocks).forEach(key => {
+        var itemName = key.split("@")[0];
+        var matName = key.split("@")[1];
+        var quantity = data.stocks[key];
+        tempStocks[itemName] ??= {};
+        tempStocks[itemName][matName] = quantity;
 
-            stockArray.forEach(obj => {
-                ProcessStockLine(obj.item, obj.mats);
-            });
-
-            FinalizeStocks();
-
-            ApplyBoardMaterialFilters()
-            tempStocks = {};
-
-            if (config.toggleAutoReadStocks) {
-                setTimeout(() => {
-                    ReadStocksBatch();
-                }, 500);
-            }
-
+        if (TypeIsCraft(itemName)) {
+            tempStocks["CRAFTS"] ??= {};
+            tempStocks["CRAFTS"][matName] = quantity;
         }
     });
+
+    if (data.completed) {
+        TraceActivity("Reading stocks: completed.");
+        FinalizeStocks();
+        await pause(1000);
+        return true;
+    }
+
+    return false;
+}
+
+function ResetStocksDisplay() {
+    sideA = $(".inventoryBody .itemsSide")[0];
+    sideB = $(".inventoryBody .valuesSide")[0];
+
+    sideA.innerHTML = "";
+    sideB.innerHTML = "";
+
+    FinalizeStocks();
 }
 
 function FinalizeStocks() {
+    stocksMaterials = [];
+    stockArray = []
+    stocks = {};
+
+    for (const item in tempStocks)
+        stockArray.push({ item: item, mats: tempStocks[item] });
+
+    stockArray.sort((a, b) => {
+        return ItemNameWithoutPrefix(a.item).localeCompare(ItemNameWithoutPrefix(b.item));
+    });
+
+    stockArray.forEach(obj => {
+        ProcessStockLine(obj.item, obj.mats);
+    });
+
+    gm.craftableMaterials = Object.keys(gm.materials).filter(mat => {
+        return CraftableMaterialName(mat) != "";
+    });
+
     if (oldStocks == null)
         oldStocks = {};
 
@@ -1986,28 +2347,25 @@ function FinalizeStocks() {
         if (materialGroups.indexOf(mat) != -1)
             return;
 
-        if (!gameInfo["materials"][mat] || gameInfo["materials"][mat].Types == null || gameInfo["materials"][mat].Types.length == 0) {
-            gameInfo["materials"][mat] = { Types: [] };
+        if (!gm.materials[mat] || gm.materials[mat].Types == null || gm.materials[mat].Types.length == 0) {
+            gm.materials[mat] ??= {};
+            gm.materials[mat]["Types"] ??= [];
 
             if (mat.endsWith(":WOOD")) {
-                gameInfo["materials"][mat].Types.push("WOOD");
+                gm.materials[mat].Types.push("WOOD");
             } else if (mat.endsWith(":BONE")) {
-                gameInfo["materials"][mat].Types.push("BONE");
+                gm.materials[mat].Types.push("BONE");
             } else if (mat.endsWith(":LEATHER")) {
-                gameInfo["materials"][mat].Types.push("LEATHER");
-            } else if (mat.startsWith("PLANT:")) {
-                gameInfo["materials"][mat].Types.push("PLANT");
-            } else if (mat.startsWith("CREATURE:")) {
-                gameInfo["materials"][mat].Types.push("MEAT");
+                gm.materials[mat].Types.push("LEATHER");
             } else if (mat.startsWith("GLASS")) {
-                gameInfo["materials"][mat].Types.push("GLASS");
+                gm.materials[mat].Types.push("GLASS");
             } else if (mat.startsWith("COAL:")) {
-                gameInfo["materials"][mat].Types.push("COAL");
+                gm.materials[mat].Types.push("COAL");
             } else if (mat.endsWith(":DRINK")) {
-                gameInfo["materials"][mat].Types.push("DRINK");
-            } else if (Object.keys(gameInfo["materials"][mat].Types).length == 0) {
+                gm.materials[mat].Types.push("DRINK");
+            } else if (Object.keys(gm.materials[mat].Types).length == 0) {
                 if (materialGroups.indexOf(mat) == -1)
-                    gameInfo["materials"][mat].Types.push("OTHER");
+                    gm.materials[mat].Types.push("OTHER");
             }
         }
     });
@@ -2038,25 +2396,43 @@ function FinalizeStocks() {
     });
 
 
+
     //manages cells flashing on stock changes
-    Object.keys(stocks).forEach(item => {
-        stock = stocks[item];
-        if (oldStocks[item] == null)
-            oldStocks[item] = {};
 
-        Object.keys(stock).forEach(mat => {
-            if (oldStocks[item][mat] == null)
-                oldStocks[item][mat] = 0;
+    var pool = GetStockPool();
 
-            var diff = stock[mat] - oldStocks[item][mat];
-            if (diff != 0) {
-                var cell = GetStockCell(item, mat);
-                FlashCellChange(cell, diff);
-            }
-            oldStocks[item][mat] = stock[mat];
+    pool.forEach(stockItemName => {
+        if (!stockItemName)
+            return;
 
-        });
+        stock = stocks[stockItemName];
+        if (oldStocks[stockItemName] == null)
+            oldStocks[stockItemName] = {};
+
+        var stock = stocks[stockItemName] ?? [];
+
+        if (stocks.length > 0) {
+            Object.keys(stock).forEach(mat => {
+                if (oldStocks[stockItemName][mat] == null)
+                    oldStocks[stockItemName][mat] = 0;
+
+                var cell = GetStockCell(stockItemName, mat);
+
+                var diff = stock[mat] - oldStocks[stockItemName][mat];
+                if (diff != 0) {
+                    FlashCellChange(cell, diff);
+                }
+                oldStocks[stockItemName][mat] = stock[mat];
+
+                if (mat == "STONE")
+                    mat = "INORGANIC"
+            });
+        } else {
+            var cell = GetStockCell(stockItemName, "");
+        }
     });
+
+    ApplyInventoryMaterialFilters()
 }
 
 function ProcessStockLine(item, matsQtts) {
@@ -2078,101 +2454,141 @@ function ProcessStockLine(item, matsQtts) {
         if (!stocks[item]["ALL"])
             stocks[item]["ALL"] = 0;
 
-        if (stocksMaterials.indexOf(mat) == -1)
-            stocksMaterials.push(mat);
+        let cmat = CraftableMaterialName(mat);
+        if (mat != "" && stocksMaterials.indexOf(cmat) == -1)
+            stocksMaterials.push(cmat);
 
         stock = stocks[item];
-        stock[mat] = qtt;
+        stock[cmat] = qtt;
         stock["ALL"] += qtt;
-
-        //GetStockCell(item, mat);
     });
 }
 
 function CreateEmptyStocksCells() {
-    var toAdd = []
-    var disp = $(".boardTable")[0].style.display
-    $(".boardTable")[0].style.display = "none"
+    var disp = $(".inventoryTable")[0].style.display
+    $(".inventoryTable")[0].style.display = "none"
 
-    Object.keys(stocks).forEach(item => {
+    var pool = GetStockPool();
+    pool.forEach(poolEntry => {
         stocksMaterials.forEach(mat => {
             if (config.selectedStocksMaterialsCols.indexOf(mat) == -1)
                 return;
-            toAdd = toAdd.concat(GetStockCell(item, mat));
+            GetStockCell(poolEntry, mat);
         });
     });
 
+    $(".inventoryTable")[0].style.display = disp
+}
 
-    $(".boardTable")[0].style.display = disp
+function GetStockPool() {
+    if (config.toggleShowMissingItems) {
+        let pool = [];
+        Object.values(gm.items).forEach(item => {
+            if (itemTypesRequiringSubtypes.indexOf(item.typeName) != -1 && !item.subtypeName)
+                return;
+
+            var key = item.isTypeOnly ? item.typeName : NoS(item.typeName) + "!" + item.subtypeName;
+            pool.push(key.toUpperCase());
+        });
+        return pool;
+    } else {
+        return Object.keys(stocks)
+    }
 }
 
 
-function GetStockCell(item, mat,) {
-    var total = stocks[item]["ALL"] + WantedProduction(item, null);
-    var toAdd = []
+function GetStockCell(stockEntry, material) {
+    var total = stocks[stockEntry] ? ["ALL"] + GetWantedProduction(stockEntry, null) : 0;
 
     //side header
-    var itemIndex = Object.keys(stocks).indexOf(item);
-    var myLabel = sideA.querySelector(".itemType[item='" + item + "']");
+    if (stockEntry == null || material == null || stockEntry == undefined)
+        console.log("QUOI LA BAISE!?");
+
+    var myLabel = sideA.querySelector(".itemType[item='" + stockEntry + "']");
     if (!myLabel) {
         myLabel = document.createElement("div");
-        myLabel.classList.add("boardCell", "itemType");
-        myLabel.textContent = ItemLabelNoGroup(item);
-        myLabel.setAttribute("item", item.toUpperCase());
+        myLabel.classList.add("cell", "itemType", "gameButton");
+        myLabel.innerHTML = StockEntryLabelGroup(stockEntry);
+        myLabel.setAttribute("item", stockEntry.toUpperCase());
 
+        /*
+        let button = document.createElement("button");
+        let span = document.createElement("span");
+        span.textContent = "/";
+        button.appendChild(span);
+        button.classList.add("rowTool", "graphButton");
+        button.addEventListener("mouseup", (e) => {
+            e.stopPropagation();
+            ToggleDisplayedGraph(item);
+        });
+        */
         sideA.appendChild(myLabel);
     }
     myLabel.setAttribute("totalVal", total)
-    myLabel.style.order = itemIndex
 
-    var tableHeader = $(".boardTableHeader")[0];
-    var header = tableHeader.querySelector(`.header[material='${mat}']`);
+    if (material == "")
+        return;
 
-    var index = config.selectedStocksMaterialsCols.indexOf(mat)
+    var tableHeader = $(".inventoryTableHeader")[0];
+    var header = tableHeader.querySelector(`.header[material='${material}']`);
+
+    var index = config.selectedStocksMaterialsCols.indexOf(material)
     if (!header) {
         header = document.createElement("div");
-        header.classList.add("boardCell", "header");;
-        header.setAttribute("material", mat);
+        header.classList.add("cell", "header", "gameButtonL", "inventoryCol");
+        header.setAttribute("material", material);
 
-        if (materialGroups.indexOf(mat) != -1)
+        if (materialGroups.indexOf(material) != -1)
             header.setAttribute("mainCat", 1);
 
-        header.innerHTML = DisplayableMaterialName(mat, 0);
-        boardStaticHeader.appendChild(header);
+        header.innerHTML = "<div title=\"" + DisplayableMaterialName(material, 2) + "\">" + DisplayableMaterialName(material, 1) + "</div>";
+        inventoryStaticHeader.appendChild(header);
 
         tableHeader.appendChild(header);
     }
     header.style.order = index;
 
-    var myMatCol = sideB.querySelector(".materialCol[material='" + mat + "']");
+    var myMatCol = sideB.querySelector(".inventoryCol[material='" + material + "']");
     //mat col
     if (!myMatCol) {
         myMatCol = document.createElement("div");
-        myMatCol.classList.add("boardCol", "materialCol");
-        myMatCol.setAttribute("material", mat);
+        myMatCol.classList.add("inventoryCol", "inventoryCol");
+        myMatCol.setAttribute("material", material);
         sideB.appendChild(myMatCol);
 
     }
-    myMatCol.style.order = config.selectedStocksMaterialsCols.indexOf(mat);
+    myMatCol.style.order = config.selectedStocksMaterialsCols.indexOf(material);
 
-    var matCell = myMatCol.querySelector(`.boardCell[item='${item}']`);
+    var matCell = myMatCol.querySelector(`.cell[item='${stockEntry}']`);
     if (!matCell) {
         matCell = document.createElement("div");
-        matCell.classList.add("boardCell", "editable");
-        matCell.setAttribute("item", item);
+        matCell.classList.add("cell", "editable");
+        matCell.setAttribute("item", stockEntry);
         var stockDiv = document.createElement("div");
         stockDiv.classList.add("stock");
-        matCell.appendChild(stockDiv);
 
+        var key = stockEntry + "/" + material;
+
+        /*
+        if (!itemJob[key])
+            cl("Missing job for " + key);
+        */
+
+        matCell.classList.toggle("hasJob", itemJob[key] != null);
+        if (itemJob[key]) {
+            matCell.setAttribute("jobId", itemJob[key] != null ? itemJob[key].index : "")
+            AddInventoryCellInput(matCell, stockEntry, material, ChangeWantedProduction);
+        }
+
+        matCell.appendChild(stockDiv);
         myMatCol.appendChild(matCell);
     }
-    matCell.style.order = itemIndex
 
     var stocked = 0;
-    if (stocks[item] && stocks[item][mat])
-        stocked = stocks[item][mat];
+    if (stocks[stockEntry] && stocks[stockEntry][material])
+        stocked = stocks[stockEntry][material];
 
-    matCell.setAttribute("totalVal", stocked + WantedProduction(item, mat));
+    matCell.setAttribute("totalVal", stocked + GetWantedProduction(stockEntry, material));
 
     var stockDiv = matCell.querySelector("div.stock");
     stockDiv.textContent = GetKiloValue(stocked);
@@ -2180,58 +2596,18 @@ function GetStockCell(item, mat,) {
     return matCell;
 }
 
-function InitStockTable() {
-    var body = $(".boardBody")[0];
-
-
-    //create corner cell
-    var cornerDiv = $(".boardTableHeader .itemType.corner")[0];
-    if (!cornerDiv) {
-        cornerDiv = document.createElement("div");
-        cornerDiv.classList.add("boardCell", "itemType", "corner");
-
-        var input = document.createElement("input");
-        //add event listeners for focus and change
-        input.addEventListener("focus", (e) => { e.target.value = ''; UpdateBoardItemFilter(''); });
-        input.addEventListener("mouseup", (e) => {
-            e.stopPropagation();
-            e.target.value = '';
-            if (e.button == 0)
-                UpdateBoardItemFilter('');
-        });
-        input.addEventListener("change", (e) => { UpdateBoardItemFilter(e.target.value); });
-        input.addEventListener("keyup", (e) => { UpdateBoardItemFilter(e.target.value); });
-        input.setAttribute("placeholder", "Item filter...");
-        cornerDiv.appendChild(input);
-
-        var button = document.createElement("button");
-        button.addEventListener("mouseup", (e) => {
-            e.stopPropagation();
-            if (e.button != 0)
-                return;
-
-            UpdateBoardMaterialsPicker();
-            $(".boardMaterialsPickerHost")[0].classList.remove("hidden");
-            var input = $(".boardMaterialsPickerHost input")[0];
-            input.value = '';
-            input.focus();
-            var event = new Event("change");
-            input.dispatchEvent(event);
-        });
-        button.textContent = "Materials ►";
-        cornerDiv.appendChild(button);
-
-        boardStaticHeader.appendChild(cornerDiv);
-    }
+function RedrawStockTable() {
+    $(".inventoryTableHeader")[0].innerHTML = ""
+    $(".inventoryTable")[0].innerHTML = ""
 }
 
-function AddBoardCellInput(cell, itemName, mat, onChangeCallback) {
+function AddInventoryCellInput(cell, itemName, mat, onChangeCallback) {
     input = document.createElement("input");
     input.type = "number";
     input.classList.add("inputNumber", "wanted");
     input.setAttribute("itemType", itemName);
     input.setAttribute("material", mat);
-    input.value = wantedProduction[itemName] ? wantedProduction[itemName][mat] ? wantedProduction[itemName][mat] : 0 : 0;
+    input.value = GetWantedProduction(itemName, mat);
     PrepareInput(input, onChangeCallback);
     cell.appendChild(input);
 }
@@ -2252,22 +2628,31 @@ function FlashCellChange(cell, diff) {
     }, 500);
 }
 
-function UpdateBoardMaterialsPicker() {
-    var pickerList = $(".boardMaterialsPicker .materialsList")[0];
+
+
+function CloseMaterialsPicker() {
+    $(".inventoryMaterialsPickerHost ")[0].classList.add("hidden");
+    ApplyInventoryMaterialFilters()
+}
+
+function OpenMaterialsPicker() {
+    UpdateInventoryMaterialsPicker();
+    $(".inventoryMaterialsPickerHost ")[0].classList.remove("hidden");
+}
+
+function UpdateInventoryMaterialsPicker() {
+    var pickerList = $(".inventoryMaterialsPicker .materialsList")[0];
 
     stocksMaterials.forEach(mat => {
-        if (!IsCraftingMaterial(mat))
-            return;
-
         var option = pickerList.querySelector(`button.materialOption[material='${mat}']`);
         if (!option) {
             option = document.createElement("button");
-            option.classList.add("materialOption");
+            option.classList.add("materialOption", "gameButton");
             option.setAttribute("material", mat);
             option.addEventListener("mouseup", (e) => {
                 e.stopPropagation();
                 if (e.button == 0)
-                    ToggleBoardMaterialSelected(e.currentTarget.getAttribute("material"));
+                    ToggleInventoryMaterialSelected(e.currentTarget.getAttribute("material"));
             });
 
             var labelPreDiv = document.createElement("div");
@@ -2277,7 +2662,9 @@ function UpdateBoardMaterialsPicker() {
             labelPreDiv.appendChild(labelDiv);
 
             option.appendChild(labelPreDiv);
-            option.setAttribute("maincat", materialGroups.indexOf(mat) != -1 ? -1 : 1);
+
+            var mainCat = materialGroups.indexOf(mat);
+            option.setAttribute("maincat", mainCat);
 
             var types = GetMaterialTypes(mat);
             var order = 10000;
@@ -2286,6 +2673,7 @@ function UpdateBoardMaterialsPicker() {
                 if (matGroup > -1 && matGroup < order)
                     order = matGroup;
             });
+
             option.setAttribute("groupOrder", order);
 
             pickerList.appendChild(option);
@@ -2309,12 +2697,11 @@ function UpdateBoardMaterialsPicker() {
         }
     });
 
-    SortBoardPicker();
+    SortInventoryMaterialPicker();
 }
 
-async function ToggleBoardMaterialSelected(mat, noBuild) {
-    var option = $(".boardMaterialsPicker .materialOption[material='" + mat + "']")[0];
-
+async function ToggleInventoryMaterialSelected(mat, noBuild) {
+    var option = $(".inventoryMaterialsPicker .materialOption[material='" + mat + "']")[0];
     var change = false;
     if (config.selectedStocksMaterialsCols.indexOf(mat) == -1) {
         if (config.selectedStocksMaterialsCols.length >= MAX_MATERIALS_COLS) {
@@ -2336,21 +2723,35 @@ async function ToggleBoardMaterialSelected(mat, noBuild) {
 
     if (change && !noBuild) {
         SaveConfig();
-        SortBoardPicker();
-        ApplyBoardMaterialFilters()
+        SortInventoryMaterialPicker();
     }
 }
 
-function ApplyBoardMaterialFilters() {
-    $(".boardTable .materialCol").forEach(cell => {
-        var mat = cell.getAttribute("material");
+function SetMaterialSelectedState(mat, selected) {
+    cl("SetMaterialSelectedState " + mat + " to " + selected);
+    if (mat == "ALL")
+        return;
+
+    if (selected) {
+        config.selectedStocksMaterialsCols.push(mat);
+    } else {
+        config.selectedStocksMaterialsCols = config.selectedStocksMaterialsCols.filter(m => m != mat);
+    }
+
+    config.selectedStocksMaterialsCols = [...new Set(config.selectedStocksMaterialsCols)];
+    SaveConfig();
+}
+
+function ApplyInventoryMaterialFilters() {
+    $(".inventoryCol").forEach(col => {
+        var mat = col.getAttribute("material");
         if (config.selectedStocksMaterialsCols.includes(mat)) {
-            cell.classList.remove("hidden");
+            col.classList.remove("hidden");
         } else {
-            cell.classList.add("hidden");
+            col.classList.add("hidden");
         }
     });
-    $(".boardTableHeader .boardCell.header").forEach(cell => {
+    $(".inventoryTableHeader .inventoryCell.header").forEach(cell => {
         var mat = cell.getAttribute("material");
         if (config.selectedStocksMaterialsCols.includes(mat)) {
             cell.classList.remove("hidden");
@@ -2361,8 +2762,39 @@ function ApplyBoardMaterialFilters() {
         cell.style.order = config.selectedStocksMaterialsCols.indexOf(mat);
     });
     CreateEmptyStocksCells()
+    SortStockCells();
+    UpdateInventoryItemFilter(lastInventoryFilter ?? '');
+}
 
-    UpdateBoardItemFilter(lastBoardFilter);
+function SortStockCells() {
+
+    var ordering = {};
+
+    var stockCells = $(".inventoryTable .cell.itemType[item]");
+    var cellsTexts = Array.from(stockCells).map(cell => { return cell.innerHTML.split("</b>").last(); });
+    cellsTexts.sort((a, b) => a.localeCompare(b));
+    var cellsHtmls = Array.from(stockCells).map(cell => { return cell.innerHTML; });
+    cellsHtmls.sort((a, b) => a.localeCompare(b));
+
+    stockCells.forEach(cell => {
+        var itemIndex = 0;
+        var itemName = cell.getAttribute("item");
+        var noHtml = cell.innerHTML.split("</b>").last();
+        if (config.toggleStockSorting) {
+            itemIndex = cellsHtmls.findIndex(obj => obj == cell.innerHTML)
+        } else {
+            itemIndex = cellsTexts.findIndex(obj => obj == noHtml)
+        }
+        cell.style.order = itemIndex;
+        ordering[itemName] = itemIndex;
+    });
+
+    var stockCells = $(".inventoryTable .cell.editable[item]");
+    stockCells.forEach(cell => {
+        var itemName = cell.getAttribute("item");
+        cell.style.order = ordering[itemName];
+    });
+
 }
 
 
@@ -2370,29 +2802,23 @@ function ClearMatName(mat) {
     return mat.replace(/ /g, "_");
 }
 
-function IsCraftingMaterial(mat) {
-    return true;
-    /*
-    if (!isCraftingMaterials[mat])
-        isCraftingMaterials[mat] = gameInfo["material"][mat].Types ? true : false;
-
-    return isCraftingMaterials[mat];
-    */
-}
 
 function DisplayableMaterialName(mat, tagMode = 0) {
 
     var matString = mat;
+
     matString = matString.replace("CREATURE:", "");
+    matString = matString.replace("INORGANIC:", "");
+    matString = matString.replace(":WOOD", "");
+    matString = matString.replace("PLANT:", "");
+    matString = matString.replace(":BONE", " ");
+    matString = matString.replace(":LEATHER", "");
+    matString = matString.replace(":DRINK", " DRINK");
+    matString = matString.replace(":", " ");
+    matString = matString.replace(/_/g, " ");
+
     switch (tagMode) {
         case 0:
-            matString = matString.replace("INORGANIC:", "");
-            matString = matString.replace(":WOOD", "");
-            matString = matString.replace("PLANT:", "");
-            matString = matString.replace(":BONE", " ");
-            matString = matString.replace(":LEATHER", "");
-            matString = matString.replace(":DRINK", " DRINK");
-            matString = matString.replace(":", " ");
             var groups = GetMaterialTypes(mat);
             groups.forEach(t => {
                 matString += " <span class='tag'>" + t + "</span>";
@@ -2400,33 +2826,28 @@ function DisplayableMaterialName(mat, tagMode = 0) {
             break;
 
         case 1:
-            matString = matString.replace("INORGANIC:", "");
-            matString = matString.replace(":WOOD", "");
-            matString = matString.replace("PLANT:", "");
-            matString = matString.replace(":BONE", " ");
-            matString = matString.replace(":LEATHER", "");
-            matString = matString.replace(":DRINK", " DRINK");
-            matString = matString.replace(":", " ");
-            var groups = GetMaterialTypes(mat);
-            groups.forEach(t => {
-                matString += " <span class='tag'>" + t + "</span>";
-            });
-
-            matString += " <div class='tags'> ";
+            matString = "<div class='mat'>" + matString + "</div>";
             types = GetMaterialTypes(mat);
-            types.forEach(t => {
-                matString += "<span class='f_" + t + "'>" + t + "</span>";
-            });
-            matString += "</div>";
+            if (types.length > 0) {
+                matString += "<div class='tags'> "
+                types.forEach(t => {
+                    matString += "<span class='f_" + t + "'>" + t + "</span>";
+                });
+                matString += "</div>";
+            };
             break;
+
+        case 2:
+            return matString.charAt(0).toUpperCase() + matString.slice(1).toLowerCase();
+
     }
 
     matString = matString.replace("ALL", "TOTAL");
 
     if (materialGroups.indexOf(mat) == -1) {
-        var matInfo = gameInfo["materials"][mat];
+        var matInfo = gm.materials[mat];
         if (!matInfo) {
-            cl("missing material info for " + mat);
+            //cl("missing material info for " + mat);
         } else {
             matInfo.Types.forEach(type => {
                 if (matString == type)
@@ -2442,48 +2863,45 @@ function DisplayableMaterialName(mat, tagMode = 0) {
 
 function GetKiloValue(value) {
     value = parseInt(value);
-
-    var unit = "";
-    /*
-    if (value >= 1000000) {
-        value = (value / 1000000).toFixed(2);
-        unit = "M";
-    } else if (value >= 1000) {
-        value = (value / 1000).toFixed(2);
-        unit = "K";
-    } else {
-        return value.toString();
-    }
-    */
-    //format to add commas
     value = value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-
-    return value + unit;
+    return value;
 }
 
-function BoardMaterialsFilterEnter(filterValue) {
+function InventoryMaterialsFilterEnter(filterValue) {
     if (filterValue != '') {
         if (isShiftPressed) {
-            var visibles = $(".boardMaterialsPicker .materialOption:not(.hidden)");
-            visibles.forEach(option => {
-                ToggleBoardMaterialSelected(option.getAttribute("material"), true);
-            });
+            var visibles = $(".inventoryMaterialsPicker .materialOption:not(.hidden)");
+            if (visibles.length > 0) {
+
+                var firstVisible = Array.from(visibles).reduce((prev, curr) => {
+                    if (prev.getAttribute("material") == "ALL")
+                        return curr;
+                    if (curr.getAttribute("material") == "ALL")
+                        return prev;
+                    return (parseInt(prev.style.order) < parseInt(curr.style.order)) ? prev : curr;
+                });
+                var isSelected = config.selectedStocksMaterialsCols.indexOf(firstVisible.getAttribute("material")) != -1;
+
+                visibles.forEach(option => {
+                    SetMaterialSelectedState(option.getAttribute("material"), !isSelected);
+                });
+            }
         } else {
-            var firstVisible = $(".boardMaterialsPicker .materialOption:not(.hidden)")[0];
+            var firstVisible = $(".inventoryMaterialsPicker .materialOption:not(.hidden)")[0];
             if (firstVisible)
-                ToggleBoardMaterialSelected(firstVisible.getAttribute("material"), true);
+                ToggleInventoryMaterialSelected(firstVisible.getAttribute("material"), true);
         }
-        $(".boardMaterialsPicker input")[0].value = '';
-        BoardMaterialsFilterChanged('');
+        $(".inventoryMaterialsPicker input")[0].value = '';
+        InventoryMaterialsFilterChanged('');
     }
 
     SaveConfig();
-    SortBoardPicker();
-    ApplyBoardMaterialFilters()
+    UpdateInventoryMaterialsPicker();
+    ApplyInventoryMaterialFilters()
 }
 
-function BoardMaterialsFilterChanged(filterValue) {
-    $(".boardMaterialsPicker .materialOption").forEach(option => {
+function InventoryMaterialsFilterChanged(filterValue) {
+    $(".inventoryMaterialsPicker .materialOption").forEach(option => {
         var mat = option.textContent.toLowerCase();
         var words = filterValue.toLowerCase().split(" ");
 
@@ -2496,32 +2914,46 @@ function BoardMaterialsFilterChanged(filterValue) {
                 option.classList.add("hidden");
         }
     });
-    SortBoardPicker();
+    SortInventoryMaterialPicker();
 }
 
-function SortBoardPicker() {
+function SortInventoryMaterialPicker() {
     //sort elements by .selcted
-    var picker = $(".boardMaterialsPicker")[0];
+    var picker = $(".inventoryMaterialsPicker")[0];
     var options = Array.from(picker.querySelectorAll(".materialOption"));
     options.sort((a, b) => {
-        var selectedA = a.classList.contains("selected") ? 0 : 1;
-        var selectedB = b.classList.contains("selected") ? 0 : 1;
+        var selectedA = a.classList.contains("selected") ? 1 : 0;
+        var selectedB = b.classList.contains("selected") ? 1 : 0;
+
+        if (selectedA != selectedB) {
+            return selectedB - selectedA;
+        } else {
+            if (selectedA == 1)
+                return config.selectedStocksMaterialsCols.indexOf(a.getAttribute("material")) - config.selectedStocksMaterialsCols.indexOf(b.getAttribute("material"));
+        }
 
         var mainA = parseInt(a.getAttribute("mainCat")) ?? 0;
         var mainB = parseInt(b.getAttribute("mainCat")) ?? 0;
 
-        if (mainA == mainB && mainA != 0) {
-            mainA = materialGroups.indexOf(a.getAttribute("material"));
-            mainB = materialGroups.indexOf(b.getAttribute("material"));
-        }
+        if (mainA == -1 && mainB > -1)
+            return 1;
+
+        if (mainA > -1 && mainB == -1)
+            return -1;
+
+        if (mainA > -1 && mainB > -1)
+            return mainA - mainB;
 
         var orderA = parseInt(a.getAttribute("groupOrder"));
         var orderB = parseInt(b.getAttribute("groupOrder"));
 
+        if (orderA != orderB)
+            return orderA - orderB;
+
         var labelA = DisplayableMaterialName(a.getAttribute("material"), 0)
         var labelB = DisplayableMaterialName(b.getAttribute("material"), 0)
 
-        return selectedA - selectedB || mainA - mainB || orderA - orderB || labelA.localeCompare(labelB);
+        return labelA.localeCompare(labelB);
     });
 
 
@@ -2532,9 +2964,9 @@ function SortBoardPicker() {
     });
 }
 
-function UpdateBoardItemFilter(search) {
-    lastBoardFilter = search;
-    var itemCells = $(".boardCell[item]");
+function UpdateInventoryItemFilter(search) {
+    lastInventoryFilter = search;
+    var itemCells = $(".inventoryBody .cell[item]");
     itemCells.forEach(cell => {
         var itemName = cell.getAttribute("item").toLowerCase();
         if (!search || search == '' || itemName.includes(search.toLowerCase())) {
@@ -2551,44 +2983,298 @@ function EditOrder(order) {
 
 }
 
-function OrderEdited(elem) {
-    var input = elem;
-}
+function OrderEdited(tag) {
+    let job = null;
+    switch (tag) {
+        case "job":
+            let jobName = $(".orderEditor #jobName")[0].value;
+            job = jobs.find(j => j.name == jobName);
+            if (job != null) {
+                $(".orderEditor #jobName")[0].classList.remove("error");
+                editedOrder.job = job;
+                var code = "10\n";
+                if (job.io?.in?.length > 0) {
+                    job.io.in.forEach(input => {
+                        if (input.flags) {
+                            input.flags.forEach(flag => {
+                                code += ":" + flag + " ";
+                            });
+                        }
+                        if (input.material)
+                            code += "!" + input.material + " ";
 
-function WantedProduction(item, mat) {
-    return 0;
-    /*
-    if (wantedProduction[item] && wantedProduction[item][mat])
-        return wantedProduction[item][mat];
-    */
-}
+                        if (input.item_type)
+                            code += input.item_type + " ";
 
-
-function UpdateWantedProduction() {
-    wantedProduction = {};
-    /*
-    orders.forEach(order => {
-        var jobTypeName = order.job;
-        var job = jobs.find(j => j.jobTypeName === jobTypeName);
-        if (job.reaction) {
-            if (job.reaction.products) {
-                job.reaction.products.forEach(prod => {
-                    var itemTypeName = prod.itemTypeName;
-                });
+                        code += ">10\n"
+                    });
+                }
+                $("#conditionCode")[0].value = code;
+                OrderEdited("cond");
+            } else {
+                $(".orderEditor #jobName")[0].classList.add("error");
             }
-        }
- 
-    });
-    */
+            break;
+
+        case "qtt":
+            break;
+
+        case "cond":
+            var lines = $("#conditionCode")[0].value.split("\n");
+
+            var inter = $(".interpretedConditions")[0];
+            var out = $(".outputConditions")[0];
+            inter.textContent = "";
+            var basicLineDone = false;
+            editedOrder.item_conditions = []
+            job = editedOrder.job;
+
+            fuseItemsTypes = new Fuse(sortedItemTypesIds);
+            fuseItemsSubTypes = new Fuse(sortedItemSubTypesIds);
+            fuseMats = new Fuse(Object.keys(gm.materials));
+            var flags = [];
+            Object.keys(gm.job_item_flags1).forEach(key => { flags.push(gm.job_item_flags1[key]) });
+            Object.keys(gm.job_item_flags2).forEach(key => { flags.push(gm.job_item_flags2[key]) });
+            Object.keys(gm.job_item_flags3).forEach(key => { flags.push(gm.job_item_flags3[key]) });
+            flags = [...new Set(flags)];
+            flags = flags.filter(f => f != "nil");
+            fuseFlags = new Fuse(flags);
+
+            lines.forEach((line) => {
+
+                if (line.trim() == "")
+                    return;
+
+                var codeLine = "";
+                var value = parseInt(line.trim());
+                var tags = [];
+                var operator = "";
+                let textOperator = "";
+                var itemTypeProduced = "";
+                var itemSubTypeProduced = "";
+
+
+                if (line.trim() == value.toString()) {
+
+                    if (basicLineDone)
+                        return;
+                    codeLine = ""
+                    basicLineDone = true;
+
+                    var produced = job.io?.out[0]?.item_typeName;
+
+                    if (produced != "" && produced != null) {
+                        textOperator = "LessThan";
+                        itemTypeProduced = produced;
+                        itemSubTypeProduced = job.io?.out[0]?.item_subtypeName;
+                        codeLine = "Stocks of <b>" + (itemSubTypeProduced ? itemSubTypeProduced : produced) + "</b> < <b>" + value + "</b>"
+                    } else {
+                        codeLine = "<u>[Job's produced item not found]</u>";
+                    }
+
+                } else {
+
+                    var mat = "";
+                    if (line.includes("!"))
+                        mat = line.split("!")[1].split(" ")[0].trim();
+                    line = line.replace("!" + mat, "");
+
+                    var itemSubTypeProduced = "";
+                    if (line.includes("."))
+                        itemSubTypeProduced = line.split(".")[1].split(" ")[0].trim();
+                    line = line.replace("." + itemSubTypeProduced, "");
+
+                    while (line.includes(":")) {
+                        var tag = line.split(":")[1].split(" ")[0].trim();
+                        line = line.replace(":" + tag, "").trim();
+                        tags.push(tag);
+                    }
+                    //find position of first characters among < > = !
+                    var operators = ["<", ">", "==", "=", "~=", "<=", ">="];
+                    var operatorPos = -1;
+                    operators.forEach(op => {
+                        var pos = line.indexOf(op);
+                        if (pos != -1 && (operatorPos == -1 || pos < operatorPos)) {
+                            operator = op;
+                            operatorPos = pos;
+                        }
+                    });
+                    line = line.replace(operator, "");
+
+                    if (operator == "=")
+                        operator = "==";
+
+                    if (operator == "")
+                        operator = ">";
+
+                    if (operator == "~=")
+                        operator = "!="
+
+                    //position of the first digit
+                    var firstDigit = line.search(/\d/);
+                    if (firstDigit == -1) {
+
+                        value = -1
+
+                    } else {
+
+                        value = parseInt(line.substr(firstDigit).trim());
+
+                        line = line.replace(value, "");
+
+                        if (value == NaN || value <= -1)
+                            value = -1
+                    }
+
+                    for (var i = 0; i < tags.length; i++) {
+                        var fuseFlag = fuseFlags.search(tags[i], { limit: 1 })[0];
+                        tags[i] = fuseFlag ? fuseFlag.item : "?" + tags[i] + "?";
+                    };
+
+                    var itemTypeProduced = line.trim();
+                    if (itemTypeProduced == "") {
+                        itemTypeProduced = "items"
+                    } else {
+                        var fuseItem = fuseItemsTypes.search(itemTypeProduced, { limit: 1 })[0];
+                        itemTypeProduced = fuseItem ? fuseItem.item : "?" + itemTypeProduced + "?";
+                    }
+
+                    if (mat != "") {
+                        var fuseMat = fuseMats.search(mat, { limit: 1 })[0];
+                        mat = fuseMat ? fuseMat.item : "?" + mat + "?";
+                    }
+
+                    if (itemSubTypeProduced != "") {
+                        var fuseSub = fuseItemsSubTypes.search(itemSubTypeProduced, { limit: 1 })[0];
+                        itemSubTypeProduced = fuseSub ? fuseSub.item : "?" + itemSubTypeProduced + "?";
+                    }
+
+                    codeLine = ""
+
+                    if (tags.length > 0) {
+                        tags.forEach(t => {
+                            if (codeLine != "")
+                                codeLine += ", ";
+
+                            if (t[0] == "?") {
+                                codeLine += "<u>" + t.replace("?", "") + "</u>";
+                            }
+                            else {
+                                codeLine += "<b>" + t + "</b>";
+                            }
+                        });
+                    }
+
+                    if (mat != "") {
+                        var tmat = mat;
+                        if (tmat[0] == "?") {
+                            tmat = "<u>" + tmat.replace("?", "") + "</u>";
+                        } else {
+                            tmat = "<b>" + tmat + "</b>";
+                        }
+                        if (codeLine != "") {
+                            codeLine += ", (" + tmat + ")";
+                        }
+                        else {
+                            codeLine += "(" + tmat + ")";
+                        }
+                    }
+                    if (codeLine != "")
+                        codeLine += " ";
+
+                    if (itemTypeProduced == "" || itemTypeProduced == undefined)
+                        itemTypeProduced = "items";
+
+                    if (itemSubTypeProduced == "" || itemSubTypeProduced == undefined)
+                        itemSubTypeProduced = "";
+
+                    var tItem = itemTypeProduced;
+                    if (itemTypeProduced[0] == "?") {
+                        tItem = "<u>" + itemTypeProduced.replace("?", "") + "</u> ";
+                    } else {
+                        tItem = "<b>" + itemTypeProduced + "</b> ";
+                    }
+
+                    var tItemSub = itemSubTypeProduced;
+                    if (itemSubTypeProduced[0] == "?") {
+                        tItemSub = "<u>" + itemSubTypeProduced.replace("?", "") + "</u> ";
+                    } else {
+                        tItemSub = "<b>" + itemSubTypeProduced + "</b> ";
+                    }
+
+                    codeLine += tItem + tItemSub + operator + " " + (value >= 0 ? "<b>" + value + "</b>" : "<u>[invalid value]</u>") + "\n";
+
+                    if (operator == "~=")
+                        operator = "!="
+
+                    textOperator = Object.values(condOperators).find(cnd => { return cnd.symbol == operator }).name ?? "??";
+                }
+
+                let condition = {
+                    "condition": textOperator,
+                    "value": value,
+                }
+                if (mat != "")
+                    condition["material"] = mat;
+                if (itemTypeProduced != "items")
+                    condition["item_type"] = itemTypeProduced;
+                if (itemSubTypeProduced != "items")
+                    condition["item_subtype"] = itemSubTypeProduced;
+                if (tags.length > 0) {
+                    condition["tags"] = tags;
+                }
+
+                inter.innerHTML += codeLine + "<br/>";
+                if (value >= 0 && condition.item_type != null)
+                    editedOrder.item_conditions.push(condition);
+            });
+
+            out.textContent = JSON.stringify(editedOrder.item_conditions, null, 2);
+            break;
+    }
+
 }
 
+function CloseOrderEditor() {
+    $(".orderEditor")[0].classList.add("hidden");
+    editedOrder = null;
+}
+
+function GetWantedProduction(item, mat) {
+    if (!mat)
+        return 0;
+
+    var key = item + "/" + mat;
+    var job = itemJob[key];
+    if (!job)
+        return 0;
+
+    let myOrders = FindActiveOrdersForJob(job);
+    if (myOrders.length == 0)
+        return 0;
+
+    return myOrders[0].amount_total;
+}
 
 function OnGeneralKeyDown(e) {
     if (e.shiftKey)
         isShiftPressed = true;
 
+    if (e.ctrlKey)
+        isCtrlPressed = true;
+
     if (e.key == "Enter")
         enterKeyDown = true;
+
+    var stockMatPicker = $(".inventoryMaterialsPickerHost:not(.hidden)")[0];
+    if (stockMatPicker) {
+        var pickerInput = stockMatPicker.querySelector("input");
+        if (document.activeElement === pickerInput)
+            return;
+        pickerInput.focus();
+        pickerInput.select();
+        return;
+    }
 
     if ($(".conditionEditor:not(.hidden)")[0])
         return;
@@ -2626,13 +3312,12 @@ function CompareDepth(a, b) {
     }
 }
 
-function PopInfo(title, message, sub, buttons = null, closeCallback = null) {
-
-    abortInit = true;
+function PopInfo(title, message, sub, buttons = null, closeCallback = null, waitingToken = "") {
 
     var infoBox = document.createElement("div");
     infoBox.classList.add("infoBox");
     infoBox.innerHTML = `<div class='window'><div class='title'></div><div class='context'></div><div class='message'></div><div class='buttons'></div></div>`;
+    infoBox.setAttribute("waitingToken", waitingToken);
     infoBox.querySelector(".title").textContent = title;
     infoBox.querySelector(".message").innerHTML = message;
 
@@ -2640,16 +3325,40 @@ function PopInfo(title, message, sub, buttons = null, closeCallback = null) {
         buttons.forEach(btn => {
             var button = document.createElement("button");
             button.textContent = btn;
+
             switch (btn) {
+                case "WAIT":
+                    var prevBox = document.querySelector(".infoBox.wait");
+                    if (prevBox)
+                        prevBox.remove();
+                    infoBox.classList.add("wait");
+                    if (closeCallback != null) {
+                        setTimeout(() => {
+                            const c = closeCallback
+                            c();
+                        }, 500);
+                    }
+                    break;
+
                 case "RESET APP PATHS":
-                    TraceActivity("Resetting paths...");
-                    errorCallback = null;
+                    TraceActivity("Resetting paths.");
                     button.addEventListener("click", (e) => {
                         e.stopPropagation();
                         ResetAppPaths();
                         document.querySelector(".infoBox").remove();
                     });
                     break;
+
+                default:
+                    button.addEventListener("click", (e) => {
+                        const callback = closeCallback;
+                        e.stopPropagation();
+                        if (callback != null)
+                            callback();
+                        document.querySelector(".infoBox").remove();
+                    });
+                    break;
+
             }
             infoBox.querySelector(".buttons").appendChild(button);
         });
@@ -2668,6 +3377,19 @@ function PopInfo(title, message, sub, buttons = null, closeCallback = null) {
     }, 500);
 }
 
+function PopInfoActive() {
+    return document.querySelector(".infoBox") != null;
+}
+
+function ClosePopInfoWaiting(token) {
+    boxes = document.querySelectorAll(".infoBox[waitingtoken='" + token + "']");
+    boxes.forEach(box => {
+        box.remove();
+    });
+}
+
+
+
 function ResetAppPaths() {
     window.api.ResetAppPaths();
 };
@@ -2684,18 +3406,11 @@ function AddKeyInfo(button, string) {
     keyInfo.textContent = string;
 }
 
-function CloseAllPopups() {
-    $(".infoBox").forEach(box => box.remove());
-    $(".boardMaterialsPickerHost")[0].classList.add("hidden");
-    $(".conditionEditor")[0].classList.add("hidden");
-    $(".orderEditor")[0].classList.add("hidden");
-}
-
-
 function GetMaterialTypes(mat) {
-    if (!gameInfo["materials"][mat])
+    if (!gm.materials[mat])
         return [];
-    return gameInfo["materials"][mat].Types;
+
+    return gm.materials[mat].Types;
 }
 
 
@@ -2703,17 +3418,849 @@ function TraceActivity(msg) {
     var pop = document.createElement("div");
     pop.classList.add("traceActivity");
     pop.innerHTML = msg;
-    $(".traces")[0].insertBefore(pop, $(".traces")[0].firstChild);
+
+    var firstChild = $(".traces")[0].firstChild;
+    $(".traces")[0].insertBefore(pop, firstChild);
+
+    if (firstChild.textContent == msg)
+        firstChild.remove();
 
     setTimeout(() => {
         const p = pop;
-        $(".traces")[0].removeChild(p);
+        if ($(".traces")[0].contains(p))
+            $(".traces")[0].removeChild(p);
     }, 3000);
 }
 
 function ClearStocksMaterialsFilter() {
     config.selectedStocksMaterialsCols = ["ALL"];
     SaveConfig();
-    UpdateBoardMaterialsPicker();
-    ApplyBoardMaterialFilters();
+    UpdateInventoryMaterialsPicker();
+    ApplyInventoryMaterialFilters();
+}
+
+async function pause(milliseconds) {
+    return new Promise(resolve => setTimeout(resolve, milliseconds));
+}
+
+
+function FixItemTypeName(name) {
+    //get last character of prod.item_typeName
+    if (name == "SIEGE_AMMO")
+        return name;
+    var lastChar = name.charAt(name.length - 1);
+    if (lastChar != "S")
+        return name + "S";
+    return name;
+}
+
+function DebugJobs() {
+    jobs.forEach(job => {
+        if (job.reaction) {
+            cl("Job #" + jobs.indexOf(job) + " " + job.name + " in/outs:");
+            job.io.in.forEach(inp => {
+                var mat = inp.material ? "(" + inp.material + ") " : "";
+                var flags = inp.flags ? "(" + inp.flags.join(",") + ") " : "";
+                var item = inp.item_subtypeName ? "ST " + inp.item_subtypeName : null;
+                item ??= inp.item_typeName ? "IT " + inp.item_typeName : "";
+                cl("   <- Input: " + inp.quantity + "x " + flags + mat + item);
+            });
+            job.io.out.forEach(outp => {
+                var mat = outp.material ? "(" + outp.material + ") " : "";
+                var item = outp.item_subtypeName ? "ST " + outp.item_subtypeName : null;
+                item ??= outp.item_typeName ? "IT " + outp.item_typeName : "";
+                cl("     -> Output: " + outp.count + "x " + mat + item);
+            });
+        }
+    });
+}
+
+function GetMaterialNameFromIndex(index) {
+    return Object.keys(gm.materials).find(matName => {
+        if (gm.materials[matName].Index == index) {
+            return matName;
+        }
+    });
+}
+
+
+if (!Array.prototype.last) {
+    Array.prototype.last = function () {
+        return this[this.length - 1];
+    };
+};
+
+function FindJobWith(name) {
+    var low = name.toLocaleLowerCase();
+    return jobs.filter(j => j.name.toLocaleLowerCase().includes(low))
+}
+
+function FindStocksWith(name) {
+    return Object.entries(stocks).filter(([key, value]) => key.includes(name));
+}
+
+function CraftableMaterialName(mat) {
+    if (mat.startsWith("CREATURE:")) {
+        if (mat.endsWith(":LEATHER") || mat.endsWith(":BONE") || mat.endsWith(":SHELL"))
+            return mat;
+        return "";
+    }
+    if (mat.startsWith("PLANT:")) {
+        if (mat.endsWith(":WOOD"))
+            return mat;
+        return "";
+    }
+    return mat;
+}
+
+
+function CompleteJobInfos(job) {
+    job.jobTypeName = gm.job_type[job.jobType];
+    job.isCrafts = job.name.includes(" crafts");
+
+    //determine item type and subtype
+    GuessJobItem(job);
+
+    //associate item & job
+    GuessJobItemAssociation(job);
+}
+
+function GuessJobItem(job) {
+    var seekNameUp = GetMaterialNameFromIndex(job.mat_index);
+    job.material = seekNameUp ? seekNameUp : "";
+
+    job.reaction = job.reactionName ? gm.reactions[job.reactionName] : null;
+    job.io = { in: [], out: [] };
+
+    if (job.reaction != null) {
+        //by reactions (easy mode)
+
+        if (job.reaction.products != null) {
+            var first = true;
+            job.reaction.products.forEach(p => {
+                if (p.item_type > -1) {
+                    let item = gm.items[p.item_type];
+                    job.io.out.push({
+                        "item": item,
+                        "materialName": job.material,
+                        "material_index": job.mat_index,
+                        "count": p.count ? p.count : 1
+                    });
+                    if (first && item) {
+                        job.item_typeName = item.subtypeName;
+                        first = false;
+                    }
+                }
+            });
+        }
+
+        if (job.reaction.reagents != null) {
+            job.reaction.reagents.forEach(r => {
+                r.flags = r.flags1.concat(r.flags2).concat(r.flags3);
+                r.material = GetMaterialNameFromIndex(r.mat_index);
+                let item = null;
+                if (r.item_type > -1)
+                    item = gm.items[r.item_type];
+
+                job.io.in.push({
+                    "item": item,
+                    "materialName": r.material,
+                    "material_index": r.mat_index,
+                    "count": r.count ? r.count : 1,
+                    "flags": r.flags,
+                    "reaction_product": r.reaction_product
+                });
+            });
+        }
+
+    } else {
+
+        //by guesswork (hard mode)
+
+        //create job output
+
+        var jn = job.name;
+        var parts = jn.toUpperCase().split(" ");
+
+        var newOut = {
+            item: null,
+            count: 1,
+        }
+        var newIn = {
+            item: null,
+            quantity: 1,
+        };
+
+        while (parts.length > 0) {
+            parts.shift(1)
+            var itm = parts.join(" ").toLowerCase();
+
+            if (sortedItemsAndTypesNames.includes(itm)) {
+                newOut.item = GetItemBySubtype(itm);
+                break;
+            }
+        }
+
+        if (jn == "Weave thread into silk") {
+            newOut.item = gm.items["CLOTH"];
+            newOut.material_category = ["SILK"];
+
+            newIn.item = gm.items["THREAD"];
+            newIn.flags = ["collected", "silk"];
+        }
+
+        if (newOut.item == null) {
+            //get item by name
+
+            var jnl = job.name.toLowerCase();
+            if (jnl.includes(" throne ") || jnl.includes(" chair "))
+                newOut.item = gm.items["CHAIR"];
+
+            if (jnl.includes(" barrel "))
+                newOut.item = gm.items["BARREL"];
+
+            if (jnl == "make bed")
+                newOut.item = gm.items["BED"];
+
+            if (jnl.includes(" chain"))
+                newOut.item = gm.items["CHAIN"];
+
+            if (jnl.includes(" quiver"))
+                newOut.item = gm.items["QUIVER"];
+
+            if (jnl.includes(" weapon rack"))
+                newOut.item = gm.items["WEAPONRACK"];
+
+            if (jnl.includes(" armor stand"))
+                newOut.item = gm.items["ARMORSTAND"];
+
+            if (jnl.includes(" bucket"))
+                newOut.item = gm.items["BUCKET"];
+
+            if (jnl.includes(" pipe section"))
+                newOut.item = gm.items["PIPE_SECTION"];
+
+            if (jnl.includes(" anvil"))
+                newOut.item = gm.items["ANVIL"];
+
+            if (jnl.includes(" wheelbarrow"))
+                newOut.item = gm.items["ITEM_TOOL_WHEELBARROW"];
+
+            if (jnl.includes(" casket"))
+                newOut.item = gm.items["COFFIN"];
+            if (jnl.includes(" sarcophagus"))
+                newOut.item = gm.items["COFFIN"];
+
+            if (jnl.includes(" hatch cover"))
+                newOut.item = gm.items["HATCH_COVER"];
+
+            if (jnl.includes(" rope"))
+                newOut.item = gm.items["CHAIN"];
+
+            if (jnl.includes(" traction bench"))
+                newOut.item = gm.items["TRACTION_BENCH"];
+
+            if (jnl.includes(" animal trap"))
+                newOut.item = gm.items["ANIMALTRAP"];
+
+            if (jnl.includes(" bolts"))
+                newOut.item = gm.items["ITEM_AMMO_BOLTS"];
+
+            if (jnl.includes(" ballista arrow head"))
+                newOut.item = gm.items["BALLISTAARROWHEAD"];
+
+            if (jnl.includes(" ballista parts")) {
+                newOut.item = gm.items["BALLISTAPARTS"];
+                job.material_category = ["WOOD"]
+            }
+            if (jnl.includes(" catapult parts")) {
+                newOut.item = gm.items["CATAPULTPARTS"];
+                job.material_category = ["WOOD"]
+            }
+            if (jnl.includes(" bolt thrower parts")) {
+                newOut.item = gm.items["BOLT_THROWER_PARTS"];
+                job.material_category = ["WOOD"]
+            }
+
+            if (jnl.endsWith(" ash")) {
+                newOut.item = gm.items["BAR"];
+                job.material = "ASH";
+            }
+            if (jnl.endsWith(" charcoal")) {
+                newOut.item = gm.items["BAR"];
+                job.material = "COAL:CHARCOAL";
+            }
+            if (jnl.includes(" potash ")) {
+                newOut.item = gm.items["BAR"];
+                job.material = "POTASH";
+            }
+            if (jnl.endsWith(" lye")) {
+                newOut.item = gm.items["BAR"];
+                job.material = "LYE";
+            }
+
+            if (jnl == "make raw clear glass") {
+                newOut.item = gm.items["ROUGH"];
+                job.material = "GLASS_CLEAR"
+            } else if (jnl == "make raw green glass") {
+                newOut.item = gm.items["ROUGH"];
+                job.material = "GLASS_GREEN"
+            } else if (jnl == "make raw crystal glass") {
+                newOut.item = gm.items["ROUGH"];
+                job.material = "GLASS_CRYSTAL";
+            }
+
+            if (jnl.endsWith(" portal"))
+                newOut.item = gm.items["DOOR"];
+
+            if (jnl.endsWith(" terrarium"))
+                newOut.item = gm.items["CAGE"];
+
+            if (jnl.endsWith(" tube"))
+                newOut.item = gm.items["PIPE_SECTION"];
+
+            if (jnl.endsWith(" vial"))
+                newOut.item = gm.items["FLASK"];
+            if (jnl.endsWith(" waterskin"))
+                newOut.item = gm.items["FLASK"];
+
+            if (jnl.endsWith(" mug"))
+                newOut.item = gm.items["GOBLET"];
+            if (jnl.endsWith(" cup"))
+                newOut.item = gm.items["GOBLET"];
+
+            if (job.name.startsWith("Make wooden training")) {
+                var weapon = job.name.split(" ").last();
+                switch (weapon) {
+                    case "sword":
+                        newOut.item = gm.items["ITEM_WEAPON_SWORD_SHORT_TRAINING"];
+                        break;
+                    case "axe":
+                        newOut.item = gm.items["ITEM_WEAPON_AXE_TRAINING"];
+                        break;
+                    case "mace":
+                        newOut.item = gm.items["ITEM_WEAPON_MACE_TRAINING"];
+                        break;
+                }
+            }
+
+            if (newOut.item == null) {
+                switch (job.jobTypeName) {
+                    case "PrepareMeal":
+                        newOut.item = gm.items["FOOD"];
+                        newIn.flags = ["unrotten", "cookable", "solid"];
+                        break;
+                    case "ConstructChest":
+                        newOut.item = gm.items["BOX"];
+                        newOut.condition = { flags: ["empty"], };
+                        break;
+                    case "ConstructThrone":
+                        newOut.item = gm.items["CHAIR"];
+                        break;
+                    case "ConstructMechanisms":
+                        newOut.item = gm.items["TRAPPARTS"];
+                        break;
+                    case "MakeAsh":
+                        newOut.item = gm.items["ASH"];
+                        break;
+                    case "MakeLye":
+                        newOut.item = gm.items["LYE"];
+                        break;
+                    case "MakePotashFromAsh":
+                        newOut.item = gm.items["POTASH"];
+                        break;
+                    case "MakePotashFromLye":
+                        newOut.item = gm.items["POTASH"];
+                        break;
+                    case "MakeRawGlass":
+                        newOut.item = gm.items["GLASS"];
+                        break;
+                    case "SmeltOre":
+                        newOut.item = gm.items["BAR"];
+                        break;
+                    case "MakeCrafts":
+                        newOut.item = -1;
+                        break;
+                    case "MintCoins":
+                        newOut.item = gm.items["COIN"];
+                        break;
+                }
+            }
+        }
+
+
+
+        //create job inputs
+        newIn.material = job.material;
+        var materialType = gm.materials[job.material]?.Types[0];
+        switch (materialType) {
+            case "STONE":
+                newIn.item = gm.items["BOULDER"];
+                break;
+            case "METAL":
+                newIn.item = gm.items["BAR"];
+                break;
+            case "GEM":
+                newIn.item = gm.items["SMALLGEM"];
+                break;
+            case "COAL":
+                newIn.item = gm.items["BAR"];
+                break;
+            case "WOOD":
+                newIn.item = gm.items["WOOD"];
+                break;
+            case "LEATHER":
+                newIn.item = gm.items["SKIN_TANNED"];
+                break;
+            case "GLASS":
+                newIn.item = gm.items["ROUGH"];
+                break;
+            case "BONE":
+                newIn = {
+                    "flags":
+                        [
+                            "unrotten",
+                            "bone",
+                            "body_part"
+                        ]
+                };
+                break;
+
+            default:
+                if (job.name.includes(" wooden ")) {
+                    newIn.item = gm.items["WOOD"];
+
+                } else if (job.name.includes(" rock ")) {
+                    newIn.material = "INORGANIC";
+                    newIn.item = gm.items["BOULDER"];
+
+                } else if (job.name.includes(" leather")) {
+                    newIn.item = gm.items['SKIN_TANNED'];
+
+                } else if (job.name.includes(" silk")) {
+                    newIn.flags = ['silk'];
+                    newIn.item = gm.items["CLOTH"];
+                    newIn.min_dimension = 10000;
+
+                } else if (job.name.includes(" yarn")) {
+                    newIn.flags = ['yarn'];
+                    newIn.item = gm.items["CLOTH"];
+                    newIn.min_dimension = 10000;
+
+                } else if (job.name.includes(" cloth")) {
+                    newIn.flags = ['plant'];
+                    newIn.item = gm.items["CLOTH"];
+                    newIn.min_dimension = 10000;
+
+                } else if (job.name == "Make bed") {
+                    newIn.item = gm.items["WOOD"];
+                }
+                break;
+        }
+
+
+        if (newOut.item == null) {
+            //try auto resolve
+            var cutName = job.name.toLowerCase();
+            if (gm.materials[newOut.material])
+                cutName = cutName.replace(gm.materials[newOut.material].name.toLocaleLowerCase(), "")
+            if (newOut.material_category)
+                cutName = cutName.replace(newOut.material_category[0].toLocaleLowerCase(), "")
+            cutName = cutName.replace("contruct", "")
+            cutName = cutName.replace("make", "")
+            cutName = cutName.replace("forge", "")
+            cutName = cutName.replace("cut", "")
+            cutName = cutName.replace("assemble", "")
+
+            //replace uppercase letters with _ + letter except first
+            cutName = cutName[0].toLowerCase() + cutName.slice(1);
+            cutName = cutName.replace(/([A-Z])/g, '_$1');
+            cutName = cutName.toLocaleLowerCase().trim();
+            newOut.item = GetItemBySubtype(cutName.trim());
+
+            if (newOut.item != null) {
+                //cl("Auto-resolved job #" + jobs.indexOf(job) + " '" + job.name + "' to item " + newOut.item.name + " using '" + cutName + "'");
+            }
+        }
+
+        job.material ??= "";
+        job.material_category ??= "";
+        if (newOut.item != null && job.material == "" && job.material_category == "") {
+            //search job name (without item name) for material
+            var jn = job.name.replace(newOut.item.name, "");
+
+            if (newOut.item != -1)
+                jn = jn.toUpperCase().replace(newOut.item.name.toUpperCase(), "")
+
+            let parts = jn.toUpperCase().trim().split(" ");
+
+            while (parts.length > 0) {
+                parts.shift(1)
+                var seekNameUp = parts.join(" ")
+
+                var matName = FindMaterialByName(seekNameUp);
+
+                if (matName) {
+                    job.material = matName;
+                    break;
+                } else {
+                    if (materialGroups.indexOf(seekNameUp) >= 0) {
+                        job.material_category = [seekNameUp];
+                    }
+                    break;
+                }
+            }
+
+            if (job.material == "" && job.material_category == "") {
+                if (job.name.includes(" leather "))
+                    job.material_category = ["LEATHER"];
+
+                if (job.name.includes(" rock "))
+                    job.material_category = ["INORGANIC"];
+
+                if (job.name.includes(" bone "))
+                    job.material_category = ["BONE"];
+
+                if (job.name.includes(" cloth "))
+                    job.material_category = ["CLOTH"];
+
+                if (job.name.includes("ivory/tooth"))
+                    job.material_category = ["TOOTH"];
+
+                if (job.name.includes("shell"))
+                    job.material_category = ["shell"];
+
+                if (job.name.includes("pearl"))
+                    job.material_category = ["PEARL"];
+
+                if (job.name.includes(" wooden "))
+                    job.material_category = ["WOOD"];
+
+                if (job.name.includes(" wood "))
+                    job.material_category = ["WOOD"];
+
+                if (job.name.includes(" yarn "))
+                    job.material_category = ["YARN"];
+
+                if (job.name.includes(" horn "))
+                    job.material_category = ["HORN"];
+
+                if (job.name.includes(" glass"))
+                    job.material_category = ["HORN"];
+
+                if (job.name == "Make bed")
+                    job.material_category = ["WOOD"];
+            }
+        }
+
+        if (newOut.item)
+            job.item_typeName = newOut.item.subtypeName;
+
+        if (newIn.item != null || newIn.flags)
+            job.io.in.push(newIn);
+
+        if (newOut.item != null) {
+            job.io.out.push(newOut);
+        } else {
+            //cl("Could not auto-resolve output item for job #" + jobs.indexOf(job) + " '" + job.name + "'");
+        }
+
+        if (job.material_category?.length > 0)
+            job.material_category[0] = job.material_category[0].toLocaleLowerCase();
+
+    }
+}
+
+function GuessJobItemAssociation(job) {
+    var key = ''
+    var matKey = "";
+
+    if (job.material != "") {
+        matKey = "/" + job.material;
+    } else if (job.material_category != null && job.material_category.length > 0) {
+        matKey = "/" + job.material_category[0].toUpperCase();
+    };
+
+    if (matKey == '')
+        return;
+
+    if (job.isCrafts) {
+        key = 'CRAFTS' + matKey;
+        itemJob[key] = job;
+        return;
+    }
+
+    if (job.io.out == null || job.io.out.length == 0)
+        return;
+
+    job.io.out.forEach(outInfo => {
+        if (!outInfo.item) {
+
+            //cl("Job #" + jobs.indexOf(job) + " " + job.name + " has no output item defined.");
+            return;
+        }
+
+        key = ''
+
+        var item = outInfo.item;
+        ok = false;
+
+        if (item.typeName == undefined && item.subtypeName != undefined) {
+            cl(" !!! Item has no typeName defined, but a subtypeName: " + item.subtypeName);
+        }
+
+        if (item.typeName == undefined && item.subtypeName == undefined) {
+            return;
+        }
+
+        key = item.isTypeOnly ? item.typeName : NoS(item.typeName) + "!" + item.subtypeName
+
+        if (key != null) {
+            key = key.toUpperCase() + matKey;
+            itemJob[key] = job;
+        }
+    });
+}
+
+function GetItemTypeByName(itemSubTypeName) {
+    return Object.entries(itemTypesMembers).find(([typeName, subTypes]) => {
+        if (subTypes.includes(itemSubTypeName))
+            return typeName;
+    });
+}
+
+
+
+function GetOrderJobLabel(order) {
+    if (order.job == "PrepareMeal") {
+        var ret = "Prepare meal (";
+        if (order.meal_ingredients == 2) {
+            ret += "easy)";
+        } else if (order.meal_ingredients == 3) {
+            ret += "fine)";
+        } else if (order.meal_ingredients == 4) {
+            ret += "lavish)";
+        } else {
+            ret += order.meal_ingredients + " ingredients)";
+        }
+        return ret;
+    }
+
+    order.meal_ingredients + " ingredients)";
+
+
+
+    let job = GetJobFromOrder(order);
+    if (!job)
+        return "Unknown job! " + order.job
+
+    if (config.toggleStockSorting) {
+        let item = job?.io?.out?.[0]?.item;
+
+        let name = "";
+
+        if (job.jobTypeName == "MakeCrafts") {
+            name = "<b>Make Crafts</b> ";
+        } else {
+            var gname = item && item != -1 ? ItemGroupName(item) : '';
+            if (gname != "")
+                name = "<b>" + gname + "</b> ";
+
+            if (item && item != -1 && item.name.toLocaleLowerCase() != gname.toLocaleLowerCase()) {
+                name += item.name + " ";
+            } else {
+                name = job.name + " ";
+            }
+        }
+
+        if (job.material_category)
+            name += "<i>(" + DisplayableMaterialName(job.material_category[0], 2) + ")</i>";
+        else if (job.material)
+            name += "<i>(" + DisplayableMaterialName(job.material, 2) + ")</i>";
+
+        return name.trim();
+
+    } else {
+        return job.name;
+
+    }
+}
+
+
+
+function GetItemBySubtype(itemName) {
+    itemName = itemName.toLowerCase().trim();
+    return Object.values(gm.items).find(itm => itm.name == itemName);
+}
+
+function FindItemsBySubtype(search) {
+    search = search.toLowerCase().trim();
+    return Object.entries(gm.items).find(([key, itm]) => { return key.includes(search) || itm.name.includes(search) || itm.typeName.includes(search) || itm.subtypeName.includes(search) });
+}
+
+function FindMaterialByName(materialName) {
+    materialName = materialName.toLowerCase().trim();
+    let materialNameKey = materialName.replaceAll(" ", "_").toUpperCase();
+
+    if (materialNameKey.includes("GLASS")) {
+        let parts = materialNameKey.split("_");
+        //reverse parts
+        parts = parts.reverse();
+        materialNameKey = parts.join("_");
+    }
+
+    return Object.entries(gm.materials).find(([key, matInfo]) => {
+        if (matInfo.name && matInfo.name == materialName)
+            return true;
+        if (key == materialNameKey)
+            return true;
+    })?.[0]
+}
+
+function FindMaterialIncluding(materialName) {
+    materialName = materialName.toLowerCase().trim();
+    return Object.entries(gm.materials).filter(([key, matInfo]) => {
+        if (matInfo.name?.toLocaleLowerCase().includes(materialName))
+            return true;
+        if (key.toLowerCase().includes(materialName))
+            return true;
+    })
+}
+
+function CheckJobsValidity() {
+    jobs.forEach(job => {
+        if (job.item_typeName != '') {
+            if (job.io.in.length == 0)
+                cl("Warning: Job #" + jobs.indexOf(job) + " " + job.name + " has no <-input defined.");
+            if (job.io.out.length == 0)
+                cl("Warning: Job #" + jobs.indexOf(job) + " " + job.name + " has no output-> defined.");
+        }
+    });
+}
+
+function NoS(str) {
+    if (str.endsWith("S") || str.endsWith("s"))
+        return str.substr(0, str.length - 1);
+    return str;
+}
+
+function GetJobFromOrder(order) {
+    var jbs = jobs.filter(j => j.jobTypeName == order.job);
+
+    if (order.reaction)
+        jbs = jbs.filter(j => j.reactionName == order.reaction);
+
+    if (order.material_category && order.material_category.length > 0)
+        jbs = jbs.filter(j => j.material_category && j.material_category[0] == order.material_category[0]);
+
+    if (order.job == "PrepareMeal") {
+        switch (order.meal_ingredients) {
+            case 2:
+                jbs = jbs.filter(j => j.name == "Preapre easy meal");
+                break;
+            case 3:
+                jbs = jbs.filter(j => j.name == "Prepare fine meal");
+                break;
+            case 4:
+                jbs = jbs.filter(j => j.name == "Prepare lavish meal");
+                break;
+            default:
+                jbs = [];
+        }
+    } else if (order.job == "SmeltOre") {
+        var caillou = order.material.split(":")[1].toLocaleLowerCase().replace("_", " ");
+        jbs = jbs.filter(j => j.name.includes(caillou));
+    } else {
+        if (order.material)
+            jbs = jbs.filter(j => j.material == order.material || j.material_category && j.material_category.includes(order.material.toLowerCase()));
+    }
+
+    if (order.item_subtype)
+        jbs = jbs.filter(j => j.item_typeName == order.item_subtype);
+
+    if (jbs.length == 1) {
+        order.foundJob = jbs[0];
+        return jbs[0];
+    }
+
+    return null;
+}
+
+function TypeIsCraft(typeName) {
+    return craftTypes.includes(typeName);
+}
+
+function SetOrderTools(element) {
+    var tools = $("#orderTools")[0];
+    if (!tools)
+    {
+        //duplicate template dom element
+        var template = $("#orderToolsTemplate")[0];
+        tools = template.cloneNode(true);
+        tools.id = "orderTools";
+        tools.classList.remove("hidden");
+        $("body")[0].appendChild(tools);
+    }
+    if (element != null) {
+        tools.classList.remove("hidden");
+        element.appendChild(tools);
+    } else {
+        tools.classList.add("hidden");
+    }
+}
+
+
+function OrderToolStopMe() {
+    if (!currentHoverOrder)
+        return;
+
+    PauseTask(currentHoverOrder, PAUSECHANNEL_ONETASK);
+    UpdateOrdersTable();
+}
+
+function OrderToolStopAllAfter() {
+    if (!currentHoverOrder)
+        return;
+
+    PauseAllTasksFrom(currentHoverOrder);
+}
+
+function OrderToolMin() {
+    if (!currentHoverOrder)
+        return;
+
+    orders = orders.filter(o => o.id !== currentHoverOrder.id);
+    orders.push(currentHoverOrder);
+    MarkEdited(currentHoverOrder);
+    if (config.toggleAutoSaveOrders)
+        QueueOrdersSave();
+    UpdateOrdersTable();
+}
+
+function OrderToolMax() {
+    if (!currentHoverOrder)
+        return;
+
+    orders = orders.filter(o => o.id !== currentHoverOrder.id);
+    orders.unshift(currentHoverOrder);
+    MarkEdited(currentHoverOrder);
+    if (config.toggleAutoSaveOrders)
+        QueueOrdersSave();
+    UpdateOrdersTable();
+}
+
+function OrderToolDuplicate() {
+    if (!currentHoverOrder)
+        return;
+
+    var newOrder = CreateNewOrder(currentHoverOrder)
+    AddNewOrder(newOrder, currentHoverOrder);
+}
+
+
+function OrderToolDelete() {
+    if (!currentHoverOrder)
+        return;
+
+    DeleteTask(currentHoverOrder);
 }

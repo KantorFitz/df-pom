@@ -1,0 +1,2570 @@
+html {
+    height: 100%;
+    width: 100%;
+}
+
+* {
+    position: relative;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+
+    &:focus-visible {
+        outline: none;
+    }
+
+    &:hover {
+        &>.keyInfo {
+            transition: opacity 1.3s linear(0, 0, 0, 1);
+            opacity: 1;
+        }
+    }
+}
+
+.keyInfo {
+    position: absolute;
+    z-index: 100;
+    right: 100%;
+    width: auto !important;
+    height: auto !important;
+    padding: 4px 7px !important;
+    border: 1px solid #666;
+    background: #336;
+    color: #FFF;
+    pointer-events: none;
+    font-size: 11px !important;
+
+    transition: opacity 0s;
+    opacity: 0;
+}
+
+svg {
+    z-index: 1;
+}
+
+@keyframes fadeOut {
+    0% {
+        opacity: 0;
+    }
+
+    15% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0;
+    }
+}
+
+body {
+    font-family: system-ui;
+    background: #000;
+    font-size: 16px;
+    text-align: center;
+
+    .traces {
+        position: absolute;
+        display: block;
+        flex-direction: column;
+        z-index: 50;
+        position: fixed;
+        top: 5px;
+        left: 5px;
+        max-height: 30px;
+        min-height: 30px;
+        min-width: 35px;
+        padding-left: 32px;
+        overflow: hidden;
+
+        #hideLogs {
+            position: absolute;
+            z-index: 100;
+            top: 0;
+            left: 0;
+            width: auto;
+        }
+
+        div {
+            width: 10px;
+            height: 10px;
+            color: #0000;
+            font-size: 0;
+
+            background-color: #666;
+            padding: 0;
+            border-radius: 3px;
+            opacity: 0.8;
+            margin: 0 0 3px 0;
+            padding: 2px 5px;
+            animation: fadeOut 1s forwards;
+            width: 100%;
+            text-align: left;
+        }
+    }
+
+
+    &.noFileSelected {
+
+        .tools,
+        .toolsSide {
+            display: none !important;
+        }
+    }
+
+    &.toggleLessColumns {
+        #extraCols {
+            span {
+                background-color: #4AD;
+            }
+        }
+
+        .optionalCol {
+            display: none !important;
+        }
+    }
+
+    &.toggleAutoReadOrders {
+        #autoReadOrders {
+            span {
+                background-color: #4AD;
+            }
+        }
+    }
+
+    &.toggleStockSorting {
+        #toggleStockSorting {
+            span {
+                background-color: #4AD;
+            }
+        }
+
+        .boardCell {
+            &.itemType {
+                b {
+                    display: inline-block !important;
+                    margin-right: 8px;
+                    color: #FF67;
+                    font-weight: normal;
+                }
+            }
+        }
+    }
+
+    &.toggleAutoSaveOrders {
+        #autoSaveOrders {
+            span {
+                background-color: #4AD;
+            }
+        }
+    }
+
+    &.toggleAutoReadStocks {
+        #autoReadStocks {
+            span {
+                background-color: #4AD;
+            }
+        }
+    }
+
+    &.toggleHideLogs {
+        .traces {
+            max-height: none;
+
+            div {
+                color: #FFF;
+                background-color: #222;
+                width: auto;
+                height: auto;
+                font-size: 100%;
+                animation: fadeOut 3s forwards;
+                min-width: 200px;
+                max-width: 200px;
+            }
+        }
+
+        #hideLogs {
+            span {
+                background-color: #4AD;
+            }
+        }
+    }
+
+
+    &.toggleStocksToolsSide {
+        #ordersSwapToolSide {
+            span {
+                background-color: #4AD;
+            }
+        }
+
+        .toolsSide {
+            right: auto !important;
+            left: -55px !important;
+        }
+    }
+
+
+    &.toggleShowMissingItems {
+        #toggleMissingItems {
+            span {
+                background-color: #4AD;
+            }
+        }
+    }
+
+}
+
+.infoBox {
+    position: fixed;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 900;
+    background-color: #000A;
+    cursor: pointer;
+
+    &.wait {
+        .window {
+            background: #113;
+
+            .buttons {
+                display: none;
+            }
+        }
+    }
+
+    .window {
+        background: #311;
+        border: #333 2px solid;
+        color: #FFF;
+        max-width: 500px;
+        cursor: pointer;
+
+        .title {
+            font-size: 18px;
+            font-weight: bold;
+            background-color: #FFF1;
+            padding: 10px;
+            cursor: pointer;
+        }
+
+        .message {
+            margin: 20px 50px 20px 50px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        .context {
+            padding: 6px;
+            color: #777;
+            font-style: italic;
+            background-color: #0003;
+        }
+
+        .buttons {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 0 10px 10px;
+
+            button {
+                font-size: 16px;
+                padding: 12px 15px;
+                margin: 10px;
+            }
+        }
+    }
+}
+
+.hidden {
+    display: none !important;
+}
+
+button {
+    display: flex;
+    align-items: center;
+    height: 100%;
+    margin: 0;
+    height: 28px;
+    line-height: normal;
+    border: none;
+    font-size: 12px;
+    background-color: #89A;
+    cursor: pointer;
+
+    &:hover {
+        background-color: #69C;
+
+        span {
+            &.ico {
+                background-color: #777;
+                color: #FFF;
+                aspect-ratio: 1 / 1;
+            }
+        }
+    }
+
+    &.active {
+        background-color: #4AD;
+    }
+
+
+    span {
+        display: block;
+        padding: 0 4px;
+        flex-basis: 0px;
+
+        &#fileRead {
+            white-space: nowrap;
+        }
+
+        &.ico {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #FFF;
+            background: #666;
+            font-size: 20px;
+            height: 100%;
+            aspect-ratio: 1 / 1;
+            line-height: 100%;
+            flex-shrink: 0;
+            flex-grow: 0;
+
+            svg {
+                width: 20px;
+                height: 20px;
+            }
+        }
+
+        &.txt {
+            flex-grow: 1;
+            flex-shrink: 1;
+            text-align: center;
+            padding: 0 10px;
+        }
+    }
+
+    &#addOrder {
+        span {
+            background-color: #49B;
+        }
+
+        &:hover {
+            span {
+                background-color: #5AC;
+            }
+        }
+    }
+}
+
+.sep {
+    flex-basis: 1px;
+    height: 10px;
+    margin: 0 5px;
+}
+
+
+input.inputNumber::-webkit-outer-spin-button,
+input.inputNumber::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+}
+
+.mainFlexHost {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    max-height: 100vh;
+    max-width: 100vw;
+    align-items: center;
+    justify-content: center;
+    overflow-x: visible;
+
+    .flexHostBackdrop {
+        position: absolute;
+        top: 0px;
+        left: 0px;
+        width: 100vw;
+        height: 100vh;
+        background: #000;
+        z-index: 0;
+    }
+}
+
+
+.mainToolbar {
+    z-index: 40;
+    top: 0px;
+    left: 0px;
+    width: 100vw;
+    flex-shrink: 0;
+
+    .tabs {
+        display: flex;
+        justify-content: center;
+        padding: 10px 0 0 0;
+        background: #111;
+        width: 100%;
+        z-index: 1;
+        border-bottom: 2px #666 solid;
+
+        button {
+            z-index: 2;
+            border: 3px solid #666;
+            border-bottom: none;
+            background-color: #333;
+            color: #FFF;
+            min-width: 150px;
+            justify-content: center;
+
+            &:hover {
+                background-color: #222;
+            }
+
+            &.active {
+                transform: translate(0, 2px);
+                background-color: #000;
+            }
+
+
+            span {
+                &:nth-child(2) {
+                    flex-grow: 1;
+                }
+            }
+        }
+    }
+}
+
+.tools {
+    display: flex;
+    justify-content: center;
+    background: #222;
+    padding: 5px;
+    margin: 15px;
+}
+
+.toolsSide {
+    position: absolute;
+    display: flex;
+    top: 0;
+    right: -55px;
+    flex-direction: column;
+    justify-content: flex-start;
+    padding: 0;
+    z-index: 50;
+
+    background: #222;
+
+    button {
+        display: block;
+        padding: 0;
+        margin: 5px;
+        padding: 0;
+        flex-shrink: 0;
+        flex-grow: 0;
+        aspect-ratio: 1 / 1;
+
+        span {
+            display: block;
+            flex-grow: 0;
+            flex-shrink: 0;
+            width: 100%;
+            height: 100%;
+
+            &.ico {
+                width: 100%;
+                height: 100%;
+            }
+
+            svg {
+                width: 100%;
+                height: 100%;
+            }
+        }
+    }
+
+    .sep {
+        min-height: 15px;
+        margin: 0;
+        background-color: #000;
+    }
+}
+
+.ordersMode {
+    display: flex;
+    flex-direction: column;
+    align-content: center;
+    align-items: center;
+    justify-content: center;
+
+    z-index: 1;
+    padding: 0;
+    margin: 0;
+    width: 100%;
+    min-height: 50vh;
+    flex-shrink: 1;
+    flex-grow: 1;
+    flex-basis: 100%;
+    overflow-y: auto;
+    overflow-x: visible;
+    scrollbar-width: none;
+
+
+    .ordersTable {
+        position: relative;
+        display: flex;
+        z-index: 1;
+        flex-direction: column;
+        max-height: 100%;
+        width: auto;
+        background: #000;
+        overflow: visible;
+        margin: 0px 20px;
+        min-height: 50px;
+        flex-grow: 1;
+
+
+        input {
+            position: absolute;
+            top: 0;
+            left: 0px;
+            width: 100%;
+            height: 100%;
+            max-width: 100%;
+            text-align: right;
+            border: none;
+            background: transparent;
+            font-family: monospace;
+            background: #366;
+            color: #DDD;
+            padding: 0 6px;
+
+            &::placeholder {
+                color: #FFF5;
+            }
+
+        }
+
+        .orderRow {
+            position: relative;
+            display: flex;
+            align-items: center;
+            overflow: visible;
+
+            &.header {
+                position: absolute;
+                top: 0;
+                z-index: 10;
+
+                .property {
+                    overflow: hidden;
+                }
+
+                .head {
+                    background: #333;
+
+                    &.job {
+                        position: relative;
+
+                        input {
+                            position: absolute;
+                            right: 0;
+                            left: auto;
+                            width: 150px;
+                            overflow: visible;
+                        }
+                    }
+                }
+            }
+
+            &:before {
+                content: " ";
+                position: absolute;
+                bottom: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: linear-gradient(#0004, #0000 12%);
+                pointer-events: none;
+                z-index: 15;
+            }
+
+            &:hover {
+                &:after {
+                    content: " ";
+                    background: #FFF2;
+                    z-index: 120;
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    pointer-events: none;
+
+                }
+
+                .toolZone {
+                    .rowTool {
+                        div {
+                            background: #499;
+                        }
+                    }
+                }
+
+                .property {
+                    &.item_conditions {
+                        z-index: 20;
+                    }
+                }
+            }
+
+            &.deleted {
+                &:after {
+                    content: " ";
+                    position: absolute;
+                    display: block;
+                    height: 2px;
+                    background: #FFF5;
+                    top: 50%;
+                    left: 0%;
+                    width: 100%;
+                    z-index: 80;
+                }
+
+                .property {
+                    background-color: #522 !important;
+                }
+            }
+
+            &.edited:not(.new) {
+                &:before {
+                    content: "\270E";
+                    position: absolute;
+                    display: block;
+                    background: #252;
+                    color: #EEE;
+                    top: 50%;
+                    transform: translate(-120%, -50%);
+                    border-radius: 25px;
+                    width: 22px;
+                    height: 22px;
+                    line-height: 22px;
+                    z-index: 800;
+                    font-size: 15px;
+                }
+
+                .property {
+                    color: #FFF !important;
+                    background-color: #242 !important;
+                }
+            }
+
+            &.new {
+                &:before {
+                    content: "\271A";
+                    position: absolute;
+                    display: block;
+                    background: #551;
+                    color: #EEE;
+                    top: 50%;
+                    transform: translate(-120%, -50%);
+                    border-radius: 25px;
+                    width: 22px;
+                    height: 22px;
+                    line-height: 22px;
+                    z-index: 800;
+                    font-size: 15px;
+                }
+
+                .property {
+                    color: #FF3 !important;
+                    background-color: #551 !important;
+                }
+            }
+
+            &.dragOver {
+                border-top: 1px #66F dashed;
+
+                & .property {
+                    background-color: #338 !important;
+                }
+            }
+
+            &.pauseAll {
+                opacity: 0.6;
+            }
+
+            &.pauseFrom {
+                opacity: 0.6;
+
+                .btnStopAllAfter {
+                    background: #FA3;
+                }
+            }
+
+            &.pauseOne {
+                opacity: 0.6;
+
+                .btnToggleMe {
+                    background: #FA3;
+                }
+            }
+
+
+
+            &.validated {
+                .property {
+                    background-color: rgb(25, 25, 60);
+                    color: #666;
+
+                    &.isTrue {
+                        background-color: #055 !important;
+                    }
+
+                    &.isFalse {
+                        background-color: #022 !important;
+                    }
+                }
+            }
+
+            &.active {
+                .property {
+                    background-color: rgb(35, 35, 80);
+                    color: #BBB;
+
+                    &.isTrue {
+                        background-color: #055 !important;
+                    }
+
+                    &.isFalse {
+                        background-color: #033 !important;
+                    }
+                }
+            }
+
+            .toolZone {
+                display: flex;
+                justify-content: center;
+                order: 1000;
+                height: 100%;
+                flex-grow: 1;
+                z-index: 9;
+                background-color: #222;
+                padding: 2px 2px !important;
+                border: none !important;
+
+                &:hover {
+                    background: #111;
+                }
+
+                .rowTool {
+                    display: flex;
+                    margin: 0 1px 0 0;
+                    height: 100%;
+                    flex-grow: 1;
+                    flex-shrink: 1;
+                    flex-basis: 40px;
+                    background: #0000;
+
+                    &:last-child {
+                        margin-right: 0px !important;
+                    }
+
+                    div {
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        width: 100%;
+                        flex-grow: 1;
+                        flex-shrink: 0;
+                        height: 100%;
+                        background: #4994;
+
+                        span {
+                            font-weight: normal;
+                            display: block;
+                            padding-top: 2px;
+                            color: #555;
+                        }
+                    }
+
+                    &:hover {
+                        div {
+                            background: #FFF;
+                        }
+                    }
+
+
+                }
+
+
+                .rowTool.btnMax {
+                    order: 970;
+                }
+
+                .rowTool.btnMin {
+                    order: 980;
+                }
+
+                .rowTool.btnDuplicate {
+                    order: 990;
+                }
+
+                .rowTool.btnDelete {
+                    order: 1000;
+                }
+            }
+
+            .property {
+                overflow: hidden;
+
+                div {
+                    text-transform: capitalize;
+                    text-align: left;
+                    white-space: nowrap;
+                }
+            }
+
+            .toolZone {
+                padding: 0 !important;
+            }
+
+            .property,
+            .toolZone {
+                position: relative;
+                flex-grow: 0;
+                flex-shrink: 0;
+                color: #666;
+                border-left: #333 1px solid;
+                border-right: #333 1px solid;
+                padding: 0 6px;
+                margin: 0 -1px;
+                height: 40px;
+                line-height: 40px;
+                background-color: rgb(15, 15, 15);
+                text-align: left;
+                z-index: 10;
+
+                &.limitCols {
+                    height: 20px;
+                    line-height: 20px;
+                }
+
+
+                &.toggleable {
+                    cursor: pointer;
+                }
+
+
+
+                &.isTrue {
+                    background-color: #444;
+                    color: #AAA;
+
+                    &.toggleable {
+                        color: #CCC;
+                        background-color: #449;
+                    }
+                }
+
+                &.isFalse {
+                    background-color: #222;
+                    color: #999;
+
+                    &.toggleable {
+                        color: #AAA;
+                        background-color: #722;
+                    }
+                }
+
+                &.id {
+                    text-align: center;
+                    order: 0;
+                }
+
+                &.job {
+                    flex-basis: 210px;
+                    order: 10;
+                    overflow: hidden;
+
+                    .progressBar {
+                        position: absolute;
+                        bottom: 0;
+                        left: 0;
+                        height: 3px;
+                        background-color: #4F46;
+                        width: 0%;
+                    }
+                }
+
+                &.amount_total {
+                    flex-basis: 45px;
+                    order: 30;
+                    text-align: right;
+                }
+
+                &.amount_left {
+                    flex-basis: 45px;
+                    order: 35;
+                    text-align: right;
+                    max-width: 50px;
+
+                    input {
+                        color: #AAF;
+                    }
+                }
+
+                &.max_workshops {
+                    flex-basis: 40px;
+                    order: 37;
+                    text-align: right;
+
+                    input {
+                        text-align: center;
+                        color: #AFA;
+                    }
+                }
+
+                &.item_subtype {
+                    flex-basis: 200px;
+                    order: 40;
+                }
+
+
+                &.material {
+                    flex-basis: 180px;
+                    order: 50;
+                    justify-content: flex-end;
+                }
+
+                &.material_category {
+                    flex-basis: 80px;
+                    order: 60;
+                }
+
+                &.frequency {
+                    flex-basis: 80px;
+                    order: 90;
+                }
+
+                &.num {
+                    font-family: monospace;
+                }
+
+
+                &.item_conditions {
+                    flex-basis: 80px;
+                    order: 100;
+                    overflow: visible;
+                    z-index: 10;
+
+                    .conditionsNum {
+                        display: block;
+                        width: 100%;
+                        height: 10px;
+                    }
+
+                    &:hover {
+                        .conditionsContainer {
+                            display: block;
+                        }
+                    }
+                }
+
+                &.is_validated {
+                    order: 110;
+                }
+
+                &.is_active {
+                    order: 111;
+                }
+
+                &.yesno {
+                    flex-basis: 40px;
+                    text-align: center;
+
+                    div {
+                        display: inline-block;
+                    }
+                }
+
+
+            }
+
+            .conditionsContainer {
+                position: absolute;
+                display: none;
+                top: 100%;
+                right: 0;
+                line-height: 20px;
+                overflow: visible;
+
+                &:before {
+                    content: "";
+                    display: block;
+                    position: absolute;
+                    z-index: -1;
+                    width: calc(100% + 10px);
+                    height: calc(100% + 10px);
+                    top: -5px;
+                    left: -5px;
+                    background: #333;
+                }
+
+                .buttons {
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    margin: 2px 0;
+
+                    * {
+                        flex-grow: 1;
+                    }
+                }
+
+                .condition {
+                    margin: 2px 0;
+
+                    .conditionPartsHost {
+                        display: flex;
+                        flex-wrap: nowrap;
+                        width: 100%;
+
+                        .conditionPart {
+                            position: relative;
+                            padding: 2px 4px;
+                            min-width: 30px;
+                            margin: 0 1px;
+                            background-color: #222;
+                            flex-grow: 1;
+                            text-align: center;
+
+                            &:empty {
+                                display: none;
+                            }
+                        }
+
+                        .btnCopy {
+                            order: 80;
+                            margin: 0 2px;
+                        }
+
+                        .btnDelete {
+                            order: 90;
+                            margin: 0 2px;
+                        }
+
+                        .cond_flags {
+                            order: 10;
+                        }
+
+                        .cond_material {
+                            order: 15;
+                        }
+
+                        .cond_item_type {
+                            order: 20;
+                        }
+
+                        .cond_item_subtype {
+                            order: 30;
+                        }
+
+                        .cond_condition {
+                            order: 40;
+                            max-width: 30px;
+                            min-width: 30px;
+                            font-size: 100%;
+                            font-weight: bold;
+                            color: #2C6;
+                        }
+
+                        .cond_value {
+                            order: 50;
+                            max-width: 45px;
+                            min-width: 45px;
+                            text-align: right;
+                        }
+
+                        .cond_reaction_id {
+                            display: none;
+                        }
+                    }
+                }
+
+            }
+
+            .btnPaste {
+                &.disabled {
+                    opacity: 0.2;
+                }
+            }
+
+            .btnAddCondition {
+                margin: 2px 0;
+                padding: 0;
+                background-color: #558;
+
+                &:hover {
+                    background-color: #77C;
+                }
+            }
+        }
+    }
+}
+
+.orderEditor,
+.conditionEditor {
+    position: fixed;
+    display: flex;
+    flex-direction: column;
+    flex-direction: column;
+    z-index: 200;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+
+    .background {
+        display: block;
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: #050505CC;
+        z-index: -1;
+    }
+
+    .window {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 330px;
+        max-width: 330px;
+        background-color: #333;
+        padding: 20px;
+        color: #AAA;
+        z-index: 100;
+
+        &>* {
+            margin: 1px 0;
+        }
+
+        H3 {
+            margin: 0 0 10px 0;
+        }
+
+        label {
+            display: flex;
+            width: 100%;
+
+            span {
+                display: block;
+                flex-basis: 95px;
+                max-width: 95px;
+                min-width: 95px;
+                text-align: right;
+                margin-right: 5px;
+                overflow: hidden;
+            }
+
+            input {
+                flex-grow: 1;
+                width: auto;
+                min-width: 0px;
+            }
+
+        }
+
+        select,
+        input {
+            border: none;
+            background: #366;
+            color: #DDD;
+            padding: 4px 8px;
+            margin-left: 2px;
+        }
+    }
+}
+
+.orderEditor {
+    .window {
+        width: auto;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        max-width: none;
+
+        h3 {
+            width: 100%;
+            text-align: center;
+            margin: 0 0 20px 0;
+        }
+
+        .autocompleteList {
+            z-index: 50;
+            min-width: 150px;
+        }
+
+        .inputs {
+            display: flex;
+            width: 100%;
+
+            label {
+                width: auto;
+                flex-grow: 1;
+
+                span {
+                    display: block;
+                    min-width: 0;
+                    flex-grow: 0;
+                    max-width: none;
+                    flex-shrink: 1;
+                    padding-right: 5px;
+                    white-space: nowrap;
+                }
+
+                input {
+                    flex-grow: 1;
+                    flex-basis: 90%;
+                }
+            }
+
+            label:last-child {
+                input {
+                    max-width: 100px !important;
+                }
+            }
+        }
+
+        .condCoderTitle {
+            margin-top: 20px;
+            font-weight: bold;
+            text-align: left;
+            width: 100%;
+        }
+
+        .conditionCoder {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            padding: 5px 0;
+            font-family: monospace;
+            font-size: 90%;
+
+            * {
+                flex-grow: 1;
+                flex-shrink: 0;
+                flex-basis: 50%;
+                margin: 0;
+            }
+
+            textarea,
+            .int,
+            .out {
+                padding: 10px;
+                padding: 12px 15px;
+                font-size: 100%;
+                text-align: left;
+                height: auto;
+                width: 100%;
+            }
+
+            textarea {
+                resize: vertical;
+                background-color: #222;
+                color: #DD0;
+            }
+
+            .int {
+                background-color: #012;
+                color: #999;
+
+                b {
+                    color: #FFF;
+                }
+
+                u {
+                    color: #FF0;
+                    background-color: #C00;
+                }
+            }
+
+            .out {
+                background-color: #210;
+                color: #F80;
+            }
+
+        }
+
+        .conditionCoderTuto {
+            background-color: #444;
+            font-size: 80%;
+            padding: 0;
+            margin: 15px 30px;
+            max-width: 450px;
+            transition: max-height 0.4s ease-in-out;
+            max-height: 20px;
+            overflow: hidden;
+            cursor: pointer;
+
+            &:hover {
+                max-height: 500px;
+            }
+
+            .markers {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin: 10px 0;
+
+                span {
+                    display: block;
+                    background: #0005;
+                    border-radius: 5px;
+                    margin: 0px 5px;
+                    padding: 4px 8px;
+                }
+            }
+
+            .exemples {
+                margin: 0;
+
+                .exemple {
+                    background-color: #0004;
+                    margin: 10px;
+
+                    .txt {
+                        padding: 3px 20px;
+                        font-style: italic;
+                        color: #AAA;
+                    }
+
+                    .code {
+                        font-family: monospace;
+                        background-color: #012;
+                        color: #F80;
+                        padding: 3px 5px;
+                    }
+                }
+            }
+        }
+
+        .buttons {
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 10px 0;
+
+            button {
+                margin: 0 6px;
+            }
+        }
+
+    }
+}
+
+.autocompleteList {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    left: 100%;
+    background-color: #000;
+
+    div {
+        padding: 0px 4px;
+        margin: 1px 0;
+        cursor: pointer;
+        background-color: #499;
+        color: #000;
+
+        &:hover {
+            background-color: #5AA;
+            color: #FFF;
+        }
+    }
+}
+
+
+
+.boardMaterialsPickerHost {
+    position: fixed;
+    display: flex;
+    top: 0px;
+    right: 0px;
+    width: 100%;
+    height: 100%;
+    background-color: #000A;
+    z-index: 10;
+}
+
+.boardMaterialsPicker {
+    position: relative;
+    top: 50%;
+    left: 50%;
+    max-height: 75vh;
+    min-height: 75vh;
+
+    min-width: 300px;
+    max-width: 85vw;
+    width: 85vw;
+
+    background-color: #111;
+    padding: 40px 10px 10px 10px;
+    transform: translate(-50%, -50%);
+    overflow: hidden;
+
+    .materialsList {
+        display: flex;
+        flex-direction: column;
+        flex-wrap: wrap;
+        align-content: flex-start;
+        justify-content: flex-start;
+        min-width: 100%;
+        min-height: 100%;
+        max-width: 100%;
+        max-height: 100%;
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: thin;
+    }
+
+    .filter {
+        position: absolute;
+        display: flex;
+        justify-content: center;
+        top: 0px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 100%;
+        background-color: #222;
+
+        button {
+            height: 100%;
+            width: auto;
+            aspect-ratio: 1/1;
+            margin-left: 5px;
+        }
+
+        input {
+            width: 300px;
+            font-size: 18px;
+            text-align: center;
+            border: none;
+            color: #FFF;
+            background-color: #FFF5;
+
+            &:focus {
+                background-color: #FF0;
+                color: #000;
+            }
+
+            &::placeholder {
+                color: #FFF8;
+                font-weight: normal;
+                font-size: 15px;
+            }
+        }
+    }
+
+    .materialOption {
+        position: relative;
+        display: block;
+        padding: 0;
+        background-color: #444;
+        line-height: 90%;
+        flex-grow: 0;
+        flex-shrink: 0;
+        max-height: 0;
+        overflow: visible;
+
+        &[maincat="-1"] {
+            font-weight: bold;
+
+            div {
+                background-color: #445;
+            }
+        }
+
+        &:hover {
+            z-index: 10;
+
+            div {
+                transition: transform 0s, background 0s;
+                transform: scale(1.1);
+                background: #AA4;
+            }
+        }
+
+        div {
+            position: absolute;
+            display: flex;
+            top: 0;
+            left: 0;
+            flex-direction: column;
+            align-items: center;
+            background-color: #444;
+            width: 100%;
+            height: 100%;
+            overflow: visible;
+
+            transition: transform 0.2s ease-out, background 0.2s;
+            transform: scale(1);
+
+
+            .label {
+                position: static;
+                padding: 0 14px;
+                vertical-align: middle;
+                align-items: center;
+                justify-content: center;
+
+                span.tag {
+                    font-size: 80%;
+                    color: #0009;
+                }
+
+                div.tags {
+                    position: absolute;
+                    display: flex;
+                    flex-direction: row;
+                    top: 0;
+                    left: 0;
+                    width: 10%;
+                    height: 100%;
+                    font-size: 0;
+                    padding: 0;
+
+                    span {
+                        display: block;
+                        align-items: center;
+                        justify-content: center;
+                        flex-shrink: 1;
+                        flex-grow: 1;
+                        flex-basis: 1px;
+                        height: 100%;
+
+
+                        &.f.STONE {
+                            background-color: #9996;
+                        }
+
+                        &.f.METAL {
+                            background-color: #0116;
+                        }
+
+                        &.f.GEM {
+                            background-color: #08D6;
+                        }
+
+                        &.CERAMIC {
+                            background-color: #F006;
+                        }
+
+                        &.WOOD {
+                            background-color: #5706;
+                        }
+
+                        &.PLANT {
+                            background-color: #0716;
+                        }
+
+                        &.LEATHER {
+                            background-color: #3106;
+                        }
+
+                        &.BONE {
+                            background-color: #FFF6;
+                        }
+
+                        &.MEAT {
+                            background-color: #C006;
+                        }
+
+                        &.GLASS {
+                            background-color: #AAF6;
+                        }
+
+                        &.COAL {
+                            background-color: #0006;
+                        }
+
+                        &.DRINK {
+                            background-color: #F086;
+                        }
+
+                        &.OTHER {
+                            background-color: #FF06;
+                        }
+                    }
+                }
+            }
+        }
+
+        &.selected {
+            div {
+                background-color: #4AD !important;
+            }
+        }
+
+        .qtt {
+            position: absolute;
+            display: block;
+            bottom: 0;
+            right: 0;
+            width: 33px;
+            height: 100%;
+            align-content: center;
+
+            padding: 0 3px;
+            color: #FFFA;
+            background-color: #0005;
+        }
+
+    }
+}
+
+.boardMode {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    z-index: 30;
+    flex-shrink: 1;
+    flex-grow: 1;
+    flex-basis: 100%;
+    width: 100%;
+    max-width: 95vw;
+    max-height: 100%;
+    padding-bottom: 20px;
+    overflow: hidden;
+
+    margin: 0;
+    scrollbar-width: none;
+
+    .boardTableHeader {
+        display: flex;
+        position: sticky;
+        margin-bottom: 1px;
+        top: 0;
+        background-color: #000;
+        z-index: 10;
+        padding-left: 159px;
+
+        .boardCell {
+            position: relative;
+            display: flex;
+            width: 100%;
+            height: 100%;
+            justify-content: center;
+            align-items: center;
+            flex-basis: 1px;
+            flex-grow: 0;
+            flex-shrink: 0;
+            overflow: hidden;
+            line-height: 95%;
+
+            background: #444;
+            color: #CCC;
+
+
+            &[maincat] {
+                background: #334;
+                font-weight: bold;
+                color: #FFF;
+                text-transform: uppercase;
+            }
+
+            * {
+                margin: 0 4px;
+            }
+
+            span {
+                display: none;
+            }
+
+
+            &:first-child {
+                min-width: 150px;
+            }
+
+            &.corner {
+                display: flex;
+                position: absolute;
+                padding: 0;
+                left: 0;
+                z-index: 20;
+
+                * {
+                    display: block;
+                    margin: 0;
+                    width: 100%;
+                    flex-grow: 1;
+                    flex-shrink: 0;
+                    flex-basis: 10px;
+                    height: 100%;
+                    color: #0008;
+                    white-space: wrap;
+                    text-align: center;
+                }
+
+                input {
+                    padding: 0 3px;
+                    border: none;
+
+                    &:focus {
+                        background-color: #FF0;
+                        border: none;
+                        color: #000;
+                    }
+                }
+            }
+        }
+    }
+
+
+    .boardContent {
+        position: relative;
+        z-index: 2;
+        flex-shrink: 1;
+        flex-grow: 1;
+        flex-basis: 100%;
+        width: auto;
+        max-width: 100%;
+        max-height: 100%;
+
+        margin: 5px 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+        scrollbar-width: none;
+
+        .boardTable {
+            position: relative;
+            display: inline-block;
+            max-height: 100%;
+            max-width: 100%;
+            width: 100%;
+            overflow-y: hidden;
+            overflow-x: hidden;
+
+
+            .itemsSide {
+                position: sticky;
+                display: flex;
+                flex-direction: column;
+                flex-grow: 0;
+                left: 0;
+                flex-shrink: 0;
+                z-index: 5;
+                margin-right: 3px;
+                background: #000;
+
+                .boardCell {
+                    position: relative;
+                    overflow: hidden;
+                    align-content: center;
+                    flex-grow: 0;
+                    flex-shrink: 0;
+                    width: 100%;
+                    text-align: left;
+
+                    white-space: nowrap;
+                    color: #CCC;
+                    background: #333;
+
+                    &.itemType {
+                        b {
+                            display: none;
+                        }
+                    }
+                }
+            }
+
+            .valuesSide {
+                display: flex;
+                flex-grow: 1;
+
+                .boardCol {
+                    display: flex;
+                    flex-direction: column;
+                    flex-grow: 0;
+                    flex-shrink: 0;
+                }
+            }
+
+            .boardBody {
+                position: relative;
+                display: flex;
+                z-index: 3;
+                min-width: 159px;
+                max-width: none;
+                flex-basis: 1px;
+                width: auto;
+                height: 100%;
+                flex-grow: 1;
+                flex-shrink: 1;
+
+                overflow-x: visible;
+                overflow-y: hidden;
+                scrollbar-width: none;
+            }
+
+            .boardCol {
+                position: relative;
+                display: flex;
+
+                .boardCell {
+                    position: relative;
+                    background-color: #FFF2;
+                    color: #EEE;
+                    overflow: hidden;
+                    white-space: wrap;
+                    transition: opacity 0.2s, background-color 10s ease-out;
+
+
+                    &.popUp {
+                        transition: background-color 0s;
+                        background-color: #337;
+                    }
+
+                    &.popDown {
+                        transition: background-color 0s;
+                        background-color: #600;
+                    }
+
+                    &:not(.hasJob)[totalVal="0"] {
+                        opacity: 0.35;
+                        background: #333;
+
+                        .stock {
+                            font-size: 0;
+                        }
+                    }
+
+                    &:hover {
+                        transition: opacity 0s;
+                        opacity: 1;
+                        border: -1px solid #FFF3;
+
+                        &[totalVal="0"] {
+                            opacity: 0.75;
+                        }
+                    }
+
+                    span {
+                        display: none;
+                    }
+
+                    &.hasJob {
+                        .stock {
+                            color: #FFF !important;
+                        }
+                    }
+
+                    &.editable {
+                        display: flex;
+                        font-family: monospace;
+                        align-items: flex-start;
+                        background-color: #88F3;
+                        padding: 0 0;
+
+
+                        * {
+                            flex-grow: 1;
+                            flex-basis: 100%;
+                            height: 100%;
+                            align-content: center;
+                        }
+
+                        &.updating {
+                            input {
+                                background-color: #FF03 !important;
+                                color:#FF0 !important;
+                            }
+                        }
+
+                        .stock {
+                            color: #FFF;
+                            text-align: right;
+                            flex-basis: 50%;
+                            width: 1px;
+                            flex-grow: 1;
+                            flex-shrink: 1;
+                            padding: 0 6px;
+                        }
+
+                        .sep {
+                            display: none;
+
+                            flex-basis: 13px;
+                            min-width: 13px;
+                            color: #555;
+                        }
+
+                        input.wanted {
+                            font-size: 100%;
+                            flex-shrink: 1;
+                            flex-basis: 50%;
+                            width: 1px;
+                            padding: 0 6px;
+                            color: #48F;
+                            text-align: left;
+                            background-color: #FFF1;
+                            border: none;
+                            font-family: monospace;
+
+                            &:focus {
+                                background-color: #FF0;
+                                border: none;
+                                color: #000;
+                            }
+                        }
+
+                    }
+
+                }
+            }
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+body.sizemode_3 {
+    .contentHead {
+        button {
+            font-size: 22px;
+
+            span:nth-child(2) {
+                padding: 15px 20px;
+            }
+        }
+    }
+
+    .keyInfo {
+        font-size: 18px !important;
+    }
+
+    .tools,
+    .toolsSide {
+        button {
+            display: flex;
+            height: 35px;
+            font-size: 22px;
+        }
+    }
+
+    .ordersMode {
+        .ordersTable {
+            font-size: 22px;
+            padding-top: 60px;
+            min-width: 1050px;
+
+            .orderRow {
+                &.edited {
+                    &:before {
+                        width: 30px;
+                        height: 30px;
+                        line-height: 28px;
+                        font-size: 20px;
+                    }
+                }
+
+                input {
+                    font-size: 20px;
+                }
+
+                .property,
+                .toolZone {
+                    height: 60px;
+                    line-height: 60px;
+                }
+
+                .toolZone {
+                    min-width: 240px;
+                }
+
+                .rowTool {
+                    min-width: 29px;
+                    margin: 0 1px;
+                }
+
+                button div {
+                    min-height: 41px;
+                    line-height: 41px;
+                    font-size: 18px;
+                }
+
+                .property {
+                    padding: 0 6px;
+
+                    &.job {
+                        flex-basis: 320px !important;
+                    }
+
+                    &.material {
+                        flex-basis: 170px !important;
+                    }
+
+                    &.item_conditions {
+                        flex-basis: 100px !important;
+                    }
+
+                    &.num {
+                        padding: 0;
+                        flex-basis: 60px !important;
+                    }
+
+                    &.yesno {
+                        padding: 0;
+                        flex-basis: 60px !important;
+                    }
+                }
+            }
+        }
+    }
+
+    &.toggleLessColumns {
+        .ordersTable {
+            min-width: 811px;
+        }
+
+        .toolZone {
+            min-width: 155px !important;
+            max-width: 155px !important;
+        }
+    }
+
+
+    .boardMode {
+        font-size: 22px;
+
+        .boardTable {
+            .boardCell {
+                height: 48px;
+                margin: 1px 1px;
+            }
+        }
+
+        .boardTableHeader {
+            height: 65px;
+            padding-left: 253px;
+
+            .boardCell {
+                flex-basis: 145px;
+                height: 100%;
+                margin: 0px 1px;
+            }
+        }
+
+        .corner,
+        .itemsSide {
+            width: 250px;
+            flex-basis: 250px;
+
+            .boardCell {
+                padding: 0 8px;
+            }
+
+            * {
+                font-size: 22px;
+            }
+        }
+
+        .valuesSide {
+            .boardCol {
+                flex-basis: 147px;
+            }
+        }
+    }
+
+    .materialOption {
+        min-height: 65px;
+        font-size: 22px;
+        margin: 1px;
+        max-width: 210px;
+        min-width: 210px;
+    }
+
+}
+
+
+body.sizemode_2 {
+    .contentHead {
+        button {
+            font-size: 16px;
+
+            span:nth-child(2) {
+                padding: 12px 16px;
+            }
+        }
+    }
+
+    .keyInfo {
+        font-size: 15px !important;
+    }
+
+
+    .tools,
+    .toolsSide {
+        button {
+            display: flex;
+            height: 32px;
+            font-size: 17px;
+        }
+    }
+
+
+    .ordersMode {
+        .ordersTable {
+            font-size: 17px;
+            padding-top: 43px;
+            min-width: 1080px;
+
+            .orderRow {
+                &.edited {
+                    &:before {
+                        width: 30px;
+                        height: 30px;
+                        line-height: 28px;
+                        font-size: 20px;
+                    }
+                }
+
+                input {
+                    font-size: 16px;
+                }
+
+                .property,
+                .toolZone {
+                    height: 43px;
+                    line-height: 43px;
+                }
+
+                .toolZone {
+                    min-width: 210px;
+                }
+
+                .rowTool {
+                    min-width: 29px;
+                    margin: 0 1px;
+                }
+
+                button div {
+                    min-height: 36px;
+                    line-height: 36px;
+                    font-size: 16px;
+                }
+
+                .property {
+                    padding: 0 6px;
+
+                    &.job {
+                        flex-basis: 300px !important;
+                    }
+
+                    &.material {
+                        flex-basis: 150px !important;
+                    }
+
+                    &.item_conditions {
+                        flex-basis: 90px !important;
+                    }
+
+                    &.num {
+                        padding: 0;
+                        flex-basis: 55px !important;
+                    }
+
+                    &.yesno {
+                        padding: 0;
+                        flex-basis: 55px !important;
+                    }
+                }
+            }
+        }
+    }
+
+    &.toggleLessColumns {
+        .ordersTable {
+            min-width: 841px;
+        }
+
+        .toolZone {
+            min-width: 155px !important;
+            max-width: 155px !important;
+        }
+    }
+
+
+    .boardMode {
+        font-size: 19px;
+
+        .boardTable {
+            .boardCell {
+                height: 38px;
+                margin: 1px 1px;
+            }
+        }
+
+        .boardTableHeader {
+            height: 55px;
+            padding-left: 223px;
+
+            .boardCell {
+                flex-basis: 145px;
+                height: 100%;
+                margin: 0px 1px;
+            }
+        }
+
+        .corner,
+        .itemsSide {
+            width: 220px;
+            flex-basis: 220px;
+
+            .boardCell {
+                padding: 0 5px;
+            }
+
+            * {
+                font-size: 19px;
+            }
+        }
+
+        .valuesSide {
+            .boardCol {
+                flex-basis: 147px;
+            }
+        }
+    }
+
+    .materialOption {
+        min-height: 65px;
+        font-size: 18px;
+        margin: 1px;
+        max-width: 190px;
+        min-width: 190px;
+    }
+
+}
+
+body.sizemode_1 {
+    .contentHead {
+        button {
+            font-size: 14px;
+
+            span:nth-child(2) {
+                padding: 10px 15px;
+            }
+        }
+    }
+
+    .keyInfo {
+        font-size: 12px !important;
+    }
+
+    .tools,
+    .toolsSide {
+        button {
+            display: flex;
+            height: 29px;
+            font-size: 15px;
+        }
+    }
+
+
+    .ordersMode {
+        .ordersTable {
+            font-size: 15px;
+            padding-top: 40px;
+            min-width: 814px;
+
+            .orderRow {
+                &.edited {
+                    &:before {
+                        width: 27px;
+                        height: 27px;
+                        line-height: 25px;
+                        font-size: 19px;
+                    }
+                }
+
+                input {
+                    font-size: 14px;
+                }
+
+                .property,
+                .toolZone {
+                    height: 40px;
+                    line-height: 40px;
+                }
+
+                .toolZone {
+                    min-width: 150px;
+                }
+
+                button div {
+                    min-height: 29px;
+                    line-height: 29px;
+                    font-size: 13px;
+                }
+
+                .property {
+                    padding: 0 8px;
+
+                    &.job {
+                        flex-basis: 235px !important;
+                    }
+
+                    &.material {
+                        flex-basis: 125px !important;
+                    }
+
+                    &.item_conditions {
+                        flex-basis: 74px !important;
+                    }
+
+                }
+            }
+        }
+    }
+
+    &.toggleLessColumns {
+        .ordersTable {
+            min-width: 660px;
+        }
+
+        .toolZone {
+            min-width: 110px !important;
+            max-width: 110px !important;
+        }
+    }
+
+
+    .boardMode {
+        font-size: 15px;
+
+        .boardTable {
+            .boardCell {
+                height: 28px;
+                margin: 1px 1px;
+            }
+        }
+
+        .boardTableHeader {
+            height: 50px;
+            padding-left: 193px;
+
+            .boardCell {
+                flex-basis: 108px;
+                height: 100%;
+                margin: 0px 1px;
+            }
+        }
+
+        .corner,
+        .itemsSide {
+            width: 190px;
+            flex-basis: 190px;
+
+            .boardCell {
+                padding: 0 5px;
+            }
+
+            * {
+                font-size: 15px;
+            }
+        }
+
+        .valuesSide {
+            .boardCol {
+                flex-basis: 110px;
+            }
+        }
+    }
+
+    .materialOption {
+        min-height: 50px;
+        font-size: 15px;
+        margin: 1px;
+        max-width: 170px;
+        min-width: 170px;
+    }
+
+}
+
+body.sizemode_0 {
+    .keyInfo {
+        font-size: 11px !important;
+    }
+
+    .tools,
+    .toolsSide {
+        button {
+            display: flex;
+            height: 25px;
+            font-size: 12px;
+        }
+    }
+
+    .ordersMode {
+        .ordersTable {
+            font-size: 12px;
+            padding-top: 25px;
+            min-width: 756px;
+
+            .orderRow {
+                &.edited {
+                    &:before {
+                        width: 22px;
+                        height: 22px;
+                        line-height: 22px;
+                        font-size: 14px;
+                    }
+                }
+
+                input {
+                    font-size: 14px;
+                }
+
+                .property,
+                .toolZone {
+                    height: 25px;
+                    line-height: 25px;
+                }
+
+                .toolZone {
+                    min-width: 144px;
+                }
+
+                button div {
+                    min-height: 24px;
+                    line-height: 24px;
+                    font-size: 13px;
+                }
+
+                .property {
+                    &.job {
+                        flex-basis: 190px !important;
+                    }
+
+                    &.material {
+                        flex-basis: 110px !important;
+                    }
+
+                    &.item_conditions {
+                        flex-basis: 62px !important;
+                    }
+
+                    &.yesno {
+                        flex-basis: 30px !important;
+                        padding: 0;
+                    }
+
+                }
+
+            }
+        }
+
+    }
+
+    &.toggleLessColumns {
+        .ordersTable {
+            min-width: 578px;
+        }
+
+        .toolZone {
+            min-width: 96px !important;
+            max-width: 96px !important;
+        }
+    }
+
+
+    .boardMode {
+        font-size: 12px;
+
+        .boardTable {
+            .boardCell {
+                height: 16px;
+                margin: 1px 1px;
+            }
+        }
+
+        .boardTableHeader {
+            height: 40px;
+            padding-left: 183px;
+
+            .boardCell {
+                flex-basis: 78px;
+                height: 100%;
+                margin: 0px 1px;
+            }
+        }
+
+        .corner,
+        .itemsSide {
+            width: 180px;
+            flex-basis: 180px;
+
+            .boardCell {
+                padding: 0 3px;
+            }
+
+            * {
+                font-size: 12px;
+            }
+        }
+
+        .valuesSide {
+            .boardCol {
+                flex-basis: 80px;
+            }
+
+            .sep {
+                min-width: 5px !important;
+                margin: 0 1px !important;
+            }
+        }
+    }
+
+    .materialOption {
+        margin: 1px;
+        max-width: 160px;
+        min-width: 160px;
+        min-height: 30px;
+
+        .label {
+            padding-top: 1px;
+            font-size: 12px;
+        }
+    }
+
+}
