@@ -1,4 +1,3 @@
-
 const $ = (selector) => document.querySelectorAll(selector);
 
 var json;
@@ -17,23 +16,30 @@ var mustWriteOrders = false;
 var mustReadStocks = false;
 
 var ordersTable;
-var isShiftPressed = false;
-var isCtrlPressed = false;
 var allOrdersPaused = false;
 var waitForOrdersOperation = false;
 var autoFillSource = {};
 var errorCallback;
-var enterKeyDown;
 var autoReadStocks = false;
+
 var lastInventoryFilter = "";
 var lastFilterChange = 0;
 var filterDelayer = null;
-var materialNames = [];
 var hoveredNumInput = null;
-var itemJob = [];
 var hoveredConditionsOrder;
+var gameStatus;
+var lastGameStatusCheck = 0;
+
+var materialNames = [];
+var itemJob = [];
+var itemHasJob = {};
 var jobSortedNames = [];
 var itemTypesRequiringSubtypes = [];
+var itemMatStockChanges = [];
+
+var emptyCellsCreated = false;
+var wasShiftPressed = false;
+var wasCtrlPressed = false;
 const PAUSECHANNEL_ALLSTASKS = -2;
 const PAUSECHANNEL_FROMTASK = -1;
 const PAUSECHANNEL_ONETASK = 0;
@@ -42,12 +48,17 @@ const MAX_MATERIALS_COLS = 20;
 const pauseAll = GetPauseCondition(PAUSECHANNEL_ALLSTASKS);
 const pauseFrom = GetPauseCondition(PAUSECHANNEL_FROMTASK);
 const pauseOne = GetPauseCondition(PAUSECHANNEL_ONETASK);
-var fuses = [];
+
+var manualWriteOrders = false;
+var manualReadOrders = false;
+var manualReadStocks = false;
 var currendFuseInput;
 var previousSizeMode;
-var removeOptionalRows = false;
+var fuses = [];
+var keysDown = [];
 const DELAY_BETWEEN_FILE_OPS_MS = 3500;
 var multiFill = false;
+var forceAllItemsVisible = false;
 var openedConditionsOrder;
 var openedConditionsIndex;
 var lastFileAccess;
@@ -69,6 +80,10 @@ var sortedItemTypesIds = [];
 var sortedItemsAndTypesNames = [];
 var sortedJobTypes = [];
 var itemTypesMembers = {};
+var stockCellsLabels = {}
+var stockCellsHeaders = {}
+var stockMatCols = {}
+var stockCells = {}
 
 var sideA;
 var sideB;
@@ -96,7 +111,7 @@ document.addEventListener("DOMContentLoaded", async (event) => { InitDOM() });
 document.addEventListener("mouseover", function (e) {
     hoveredNumInput = null;
     hoveredNumInputTime = Date.now();
-    if (e.target instanceof HTMLInputElement && e.target.classList.contains("inputNumber"))
+    if (e.target instanceof HTMLInputElement && e.target.getAttribute("type") == "number")
         hoveredNumInput = e.target;
 });
 
@@ -104,17 +119,14 @@ async function InitDOM() {
     fileHandle = await window.api.GetFileHandle();
 
     SetTab("orders");
-
-    await InitData();
-
+    sideA = $(".inventoryBody .itemsSide")[0];
+    sideB = $(".inventoryBody .valuesSide")[0];
     inventoryStaticHeader = $(".inventoryTableHeader")[0];
     ordersTable = $(".ordersTable")[0];
+
     document.addEventListener("keydown", (e) => { OnGeneralKeyDown(e) });
+    document.addEventListener("keyup", (e) => { OnGeneralKeyUp(e) });
     $("#inventoryMaterialsFilter")[0].addEventListener("mouseup", (e) => { e.stopPropagation(); });
-    $("#inventoryMaterialsFilter")[0].addEventListener("keyup", (e) => {
-        if (e.key == "Enter")
-            InventoryMaterialsFilterEnter()
-    });
     $(".inventoryMaterialsPicker")[0].addEventListener("mouseup", (e) => { e.stopPropagation(); });
     $(".inventoryTable")[0].addEventListener("scroll", (e) => {
         inventoryStaticHeader.style.transform = `translateX(-${e.target.scrollLeft}px)`;
@@ -122,51 +134,65 @@ async function InitDOM() {
         if (inventoryStaticHeaderCorner)
             inventoryStaticHeaderCorner.style.transform = `translateX(${e.target.scrollLeft}px)`;
     });
-    sideA = $(".inventoryBody .itemsSide")[0];
-    sideB = $(".inventoryBody .valuesSide")[0];
-
+    window.addEventListener("focus", (event) => { ClearKeys() });
     PrepareInput($("input#conditionValue")[0]);
+
+    await InitData();
 }
 
 async function InitData() {
 
+    Toast("Initializing...");
     await GetConfig();
     ApplyConfigClasses();
 
     let ok = false;
     while (!ok) {
-        ok = await GetGameInfos();
+        ok = await GetGameStatus();
         if (!ok)
-            await pause(500);
+            await pause(300);
     }
 
     ok = false;
     while (!ok) {
+        Toast("Getting game infos...");
+        ok = await GetGameInfos();
+        if (!ok)
+            await pause(300);
+    }
+
+    ok = false;
+    while (!ok) {
+        Toast("Reading jobs...");
         ok = await ReadJobs();
         if (!ok)
-            await pause(500);
+            await pause(300);
     }
 
     initDone = true;
 
-    QueueOrdersRead(true);
-    QueueStocksRead(true);
-    DataAutoUpdater();
+    await QueueOrdersRead(true);
+    await QueueStocksRead(true);
+    await DataAutoUpdater();
+    Toast("<b>Ready</b>");
 }
 
-function QueueOrdersRead(immediate = false) {
+function QueueOrdersRead(immediate = false, manual = false) {
+    manualReadOrders = manual;
     mustReadOrders = true;
     if (immediate)
-        TryReadWriteOrders();
+        TryReadWriteOrders(true);
 }
 
-function QueueOrdersSave(immediate = false) {
+function QueueOrdersSave(immediate = false, manual = false) {
+    manualWriteOrders = manual;
     mustWriteOrders = true;
     if (immediate)
-        TryReadWriteOrders();
+        TryReadWriteOrders(true);
 }
 
-function QueueStocksRead(immediate = false) {
+function QueueStocksRead(immediate = false, manual = false) {
+    manualReadStocks = manual;
     mustReadStocks = true;
     if (immediate)
         TryReadStocks();
@@ -174,6 +200,17 @@ function QueueStocksRead(immediate = false) {
 
 async function DataAutoUpdater() {
     if (initDone) {
+
+        if (lastGameStatusCheck < Date.now() - 1500) {
+            lastGameStatusCheck = Date.now();
+            ok = await GetGameStatus();
+            if (!ok) {
+                //game closed
+                ResetApp();
+                return;
+            }
+        }
+
         await TryReadWriteOrders();
         await TryReadStocks();
     }
@@ -181,8 +218,65 @@ async function DataAutoUpdater() {
     setTimeout(DataAutoUpdater, 150);
 }
 
+function ResetApp() {
+    cl("Resetting app data...");
+    Trace("Resetting app data...");
+    window.api.ResetApp();
+    gm = {};
+    orders = [];
+    stocks = [];
 
-async function TryReadWriteOrders() {
+    allOrdersPaused = false;
+    wasShiftPressed = false;
+    wasCtrlPressed = false;
+
+    currendFuseInput = null;
+    fuses = [];
+    keysDown = [];
+    openedConditionsOrder = null;
+    openedConditionsIndex = 0;
+    lastFileAccess = 0;
+    readingStocks = false;
+    readingJobs = false;
+    inventoryDisplayedMaterials = [];
+    oldStocks = {};
+    stocks = [];
+    tempStocks = [];
+    stocksMaterials = [];
+    jobs = null;
+    tempJobs = [];
+    gm = {};
+    sortedItemsAllIds = [];
+    sortedItemSubTypesIds = [];
+    sortedItemTypesIds = [];
+    sortedItemsAndTypesNames = [];
+    sortedJobTypes = [];
+    itemTypesMembers = {};
+
+    $(".ordersTable")[0].innerHTML = "";
+
+    ClearStockTable();
+    InitData();
+}
+
+function ClearStockTable() {
+    itemMatStockChanges = [];
+    stockCellsLabels = {}
+    stockCellsHeaders = {}
+    stockMatCols = {}
+    stockCells = {}
+    emptyCellsCreated = false;
+
+    $(".inventoryTableHeader")[0].innerHTML = "";
+    $(".inventoryBody .itemsSide")[0].innerHTML = "";
+    $(".inventoryBody .valuesSide")[0].innerHTML = "";
+    $(".materialsList.hozScroll")[0].innerHTML = "";
+}
+
+async function TryReadWriteOrders(immediate = false) {
+    if (immediate)
+        lastFileAccess = 0;
+
     var currentFileAccess = Date.now();
     if (lastFileAccess == undefined)
         lastFileAccess = 0;
@@ -196,17 +290,27 @@ async function TryReadWriteOrders() {
     if (!conditionEdited) {
         if (mustWriteOrders) {
 
+            if (manualWriteOrders)
+                Toast("Saving orders...");
+
             mustWriteOrders = false;
             lastFileAccess = Date.now();
             await WriteOrders();
             lastFileAccess = Date.now();
 
+            manualWriteOrders = false;
+
         } else if (mustReadOrders || config.toggleAutoReadOrders) {
+
+            if (manualReadOrders)
+                Toast("Reading orders...");
 
             mustReadOrders = false;
             lastFileAccess = Date.now();
             await ReadOrders();
             lastFileAccess = Date.now();
+
+            manualReadOrders = false;
 
         }
     }
@@ -214,171 +318,12 @@ async function TryReadWriteOrders() {
 
 
 
-document.addEventListener("keyup", (e) => {
-    if (PopInfoActive())
-        return;
-
-    if (!e.shiftKey)
-        isShiftPressed = false;
-
-    if (!e.ctrlKey)
-        isCtrlPressed = false;
-
-    if (e.key == "Enter")
-        enterKeyDown = false;
-
-    var key = e.key.toLocaleLowerCase();
-    if (key == "s") {
-        //save
-        if (e.ctrlKey) {
-            e.preventDefault();
-            if (e.shiftKey) {
-                ToggleOption("AutoSaveOrders");
-            } else {
-                WriteOrders();
-            }
-        }
-    }
-    if (key == "r") {
-        //read
-        if (e.ctrlKey) {
-            e.preventDefault();
-            if (e.shiftKey) {
-                ToggleOption("AutoReadOrders");
-            } else {
-                ReadOrders();
-            }
-        }
-    }
-
-    if (key == " ") {
-        //pause/resume
-        if (e.ctrlKey) {
-            if (currentHoverOrder) {
-                if (e.shiftKey) {
-                    e.preventDefault();
-                    PauseAllTasksFrom(currentHoverOrder);
-                } else {
-                    e.preventDefault();
-                    if (IsTaskPaused(currentHoverOrder, PAUSECHANNEL_ONETASK)) {
-                        ResumeTask(currentHoverOrder, PAUSECHANNEL_ONETASK);
-                    } else {
-                        PauseTask(currentHoverOrder, PAUSECHANNEL_ONETASK);
-                    }
-                    UpdateOrdersTable();
-                }
-            }
-        }
-    }
-
-    if (key == "x") {
-        //delete
-        if (e.ctrlKey) {
-            e.preventDefault();
-            if ($(".inventoryMaterialsPickerHost:not(.hidden)")[0]) {
-                ClearStocksMaterialsFilter();
-            } else {
-                DeleteTask(currentHoverOrder);
-            }
-        }
-    }
-    if (key == "z") {
-        //cancel changes
-        if (e.ctrlKey) {
-            e.preventDefault();
-            CancelChanges()
-        }
-    }
-    if (key == "tab") {
-        //switch tab
-        if (e.ctrlKey) {
-            e.preventDefault();
-            if (displayedTab == "inventory") {
-                SetTab("orders");
-            } else {
-                SetTab("inventory");
-            }
-        }
-    }
-
-    if (key == "d") {
-        //duplicate
-        if (e.ctrlKey) {
-            if (currentHoverOrder) {
-                e.preventDefault();
-                var newOrder = CreateNewOrder(currentHoverOrder)
-                AddNewOrder(newOrder, currentHoverOrder);
-            }
-        }
-    }
-    if (key == "c") {
-        //create
-        if (e.ctrlKey) {
-            e.preventDefault();
-            EditOrder(CreateNewOrder());
-        }
-    }
-    if (key == "e") {
-        //edit
-        if (e.ctrlKey) {
-            if (currentHoverOrder) {
-                e.preventDefault();
-                EditOrder(currentHoverOrder);
-            }
-        }
-    }
-
-    if (key == "a") {
-        //stop all
-        if (e.ctrlKey) {
-            e.preventDefault();
-            PauseAllTasks();
-        }
-    }
-
-    if (key == "1" || key == "&") {
-        //toggle logs
-        if (e.ctrlKey) {
-            e.preventDefault();
-            ToggleOption("HideLogs");
-        }
-    }
-
-    if (key == "q") {
-        //zoom
-        if (e.ctrlKey) {
-            e.preventDefault();
-            CycleSizeMode()
-        }
-    }
-
-    if (key == "f") {
-        //extra cols
-        if (e.ctrlKey) {
-            e.preventDefault();
-            ToggleOption("LessColumns");
-        }
-    }
-
-    if (key == "g") {
-        //swap tool side
-        if (e.ctrlKey) {
-            e.preventDefault();
-            ToggleOption("StocksToolsSide");
-        }
-    }
-
-    if (key == "escape") {
-        OnRightClickOrEscape();
-    }
-});
-
 document.addEventListener("wheel", e => {
     if (hoveredNumInput != null && TimeSinceInputHovered() > 300) {
         e.preventDefault();
 
         var delta = Math.sign(e.deltaY);
-        if (isCtrlPressed)
+        if (IsCtrlPressed())
             delta *= 5;
         var curVal = e.target.value;
         curVal = curVal === "" ? 0 : curVal;
@@ -390,7 +335,7 @@ document.addEventListener("wheel", e => {
         return;
     }
 
-    if (isShiftPressed || isCtrlPressed)
+    if (IsShiftPressed() || IsCtrlPressed())
         return false;
 
     var host = e.target.closest(".hozScroll");
@@ -429,6 +374,29 @@ function CheckError(data, waitingToken) {
     }
 
     return false;
+}
+
+async function GetGameStatus() {
+    Trace("Checking game status...");
+    gameStatus = await window.api.GetGameStatus();
+
+    if (CheckError(gameStatus, "GetGameStatus"))
+        return false;
+
+    var status = "";
+    if (!gameStatus.isFortress) {
+        status = "The current Dwarf Fortress mode is not Fortress Mode.";
+    } else if (gameStatus.site == "nil") {
+        status = "No fortress site is currently loaded in Dwarf Fortress.";
+    }
+
+    if (status != "") {
+        PopInfo("Game not ready", status + "<br><br> Please load a fortress and try again.", "", [], null, "GetGameStatus");
+        return false;
+    }
+
+    ClosePopInfoWaiting("GetGameStatus")
+    return true
 }
 
 async function GetGameInfos() {
@@ -470,10 +438,10 @@ async function GetGameInfos() {
             matI.Types = [];
 
         matI.id = mat;
-        matI.Types.forEach((flag) => {
-            if (!gm["material_types"][flag])
-                gm["material_types"][flag] = []
-            gm["material_types"][flag].push(mat)
+        matI.Types.forEach((mt) => {
+            if (!gm["material_types"][mt])
+                gm["material_types"][mt] = []
+            gm["material_types"][mt].push(mat)
         });
         gm.materials[mat] = matI;
         materialNames.push(matI.name);
@@ -503,6 +471,13 @@ async function GetGameInfos() {
         typeName: "CRAFTS"
     };
 
+    var flags = [];
+    Object.keys(gm.job_item_flags1).forEach(key => { flags.push(gm.job_item_flags1[key]) });
+    Object.keys(gm.job_item_flags2).forEach(key => { flags.push(gm.job_item_flags2[key]) });
+    Object.keys(gm.job_item_flags3).forEach(key => { flags.push(gm.job_item_flags3[key]) });
+    flags = [...new Set(flags)];
+    gm.itemFlags = flags.filter(f => f != "nil");
+
     return true;
 }
 
@@ -512,13 +487,13 @@ async function ReadJobs() {
     let ok = false;
     readJobsCompleted = false;
 
-    TraceActivity("Reading jobs...");
+    Trace("Reading jobs...");
     while (!ok) {
         ok = await ReadJobsBatch();
         if (!ok)
             await pause(100);
     }
-    TraceActivity("Reading jobs: completed.");
+    Trace("Reading jobs: completed.");
 
     return true;
 }
@@ -541,6 +516,11 @@ async function ReadJobsBatch() {
     data.jobs.forEach(job => {
         tempJobs.push(job);
     });
+
+    if (data.jobs.length == 0) {
+        await pause(400);
+        return false;
+    }
 
     if (data.completed) {
         jobs = tempJobs;
@@ -594,12 +574,10 @@ function DragDrop(e) {
     if (fromIndex === toIndex)
         return;
 
-    cl("splice " + fromIndex + " to " + toIndex);
     const movedOrder = orders.splice(fromIndex, 1)[0];
 
     orders.splice(toIndex, 0, movedOrder);
 
-    cl(movedOrder);
     MarkEdited(movedOrder);
     UpdateOrdersTable();
     /*
@@ -615,14 +593,12 @@ function DragDrop(e) {
 }
 
 
-function UpdateOrdersTable(forceRedrawConditions = false) {
-    var orderlines = ordersTable.querySelectorAll(".orderRow")
-    orderlines.forEach(line => {
-        //dont delete the header line
-        if (orders.find(o => o.id == line.getAttribute("orderId")) == null)
-            line.remove()
-    });
+function UpdateOrdersTable() {
+    if (!ordersTable)
+        return;
 
+    var orderlines = ordersTable.querySelectorAll(".orderRow")
+    orderlines.forEach(line => { line.remove() });
 
     orders.forEach(order => {
 
@@ -635,6 +611,7 @@ function UpdateOrdersTable(forceRedrawConditions = false) {
             editedLine.draggable = true;
             editedLine.setAttribute("orderId", order.id);
 
+            editedLine.addEventListener("click", (e) => { const o = order; EditOrder(o); });
             editedLine.addEventListener("dragstart", (e) => { DragStart(e); });
             editedLine.addEventListener("dragover", (e) => { DragOver(e); });
             editedLine.addEventListener("dragleave", (e) => { DragLeave(e); });
@@ -643,71 +620,6 @@ function UpdateOrdersTable(forceRedrawConditions = false) {
             editedLine.addEventListener("mouseenter", (e) => { currentHoverOrder = GetOrderFromElement(e.currentTarget); SetOrderTools(e.currentTarget); });
             editedLine.addEventListener("mousemove", (e) => { currentHoverOrder = GetOrderFromElement(e.currentTarget); SetOrderTools(e.currentTarget); });
             editedLine.addEventListener("mouseleave", (e) => { currentHoverOrder = null;; SetOrderTools(null) });
-
-            /*
-            var toolZone = document.createElement("div");
-            toolZone.classList.add("toolZone");
-            editedLine.appendChild(toolZone);
-
-            button = CreateRowButton(["btnToggleMe"], "⏹", (e) => {
-                myOrder = GetOrderFromElement(e.currentTarget);
-                if (IsTaskPaused(myOrder, PAUSECHANNEL_ONETASK)) {
-                    ResumeTask(myOrder, PAUSECHANNEL_ONETASK);
-                    UpdateOrdersTable();
-                } else {
-                    PauseTask(myOrder, PAUSECHANNEL_ONETASK);
-                    UpdateOrdersTable();
-                }
-            });
-            AddKeyInfo(button, "(CTRL+SPACE)");
-            toolZone.appendChild(button);
-
-            button = CreateRowButton(["btnStopAllAfter"], "⏹⇓", (e) => {
-                myOrder = GetOrderFromElement(e.currentTarget);
-                PauseAllTasksFrom(myOrder);
-            });
-            AddKeyInfo(button, "(CTRL+SHIFT+SPACE)");
-            toolZone.appendChild(button);
-
-            button = CreateRowButton(["btnDuplicate"], "⧉", (e) => {
-                myOrder = GetOrderFromElement(e.currentTarget);
-                var newOrder = CreateNewOrder(myOrder)
-                AddNewOrder(newOrder, myOrder);
-            });
-            toolZone.appendChild(button);
-            AddKeyInfo(button, "(CTRL+D)");
-
-            button = CreateRowButton(["btnMax", "optionalCol"], "⇈", (e) => {
-                myOrder = GetOrderFromElement(e.currentTarget);
-                orders = orders.filter(o => o.id !== myOrder.id);
-                orders.unshift(myOrder);
-                MarkEdited(myOrder);
-                if (config.toggleAutoSaveOrders)
-                    QueueOrdersSave();
-                UpdateOrdersTable();
-            });
-            AddKeyInfo(button, "(CTRL+V)");
-            toolZone.appendChild(button);
-
-            button = CreateRowButton(["btnMin", "optionalCol"], "⇊", (e) => {
-                myOrder = GetOrderFromElement(e.currentTarget);
-                orders = orders.filter(o => o.id !== myOrder.id);
-                orders.push(myOrder);
-                MarkEdited(myOrder);
-                if (config.toggleAutoSaveOrders)
-                    QueueOrdersSave();
-                UpdateOrdersTable();
-            });
-            AddKeyInfo(button, "(CTRL+B)");
-            toolZone.appendChild(button);
-
-            button = CreateRowButton(["btnDelete"], "✖", (e) => {
-                myOrder = GetOrderFromElement(e.currentTarget);
-                DeleteTask(myOrder);
-            });
-            AddKeyInfo(button, "(CTRL+X)");
-            toolZone.appendChild(button);
-            */
 
             //place edited line at the right order in parent
             const referenceNode = ordersTable.children[orderIndex + 1]; //+1 to skip header
@@ -1032,7 +944,7 @@ function UpdateConditionsContainer(order) {
                         condPartElement.addEventListener("mouseup", (e) => {
                             e.stopPropagation();
                             if (e.button == 0)
-                                ShowConditionEditor(order, index);
+                                OpenConditionEditor(order, index);
                         });
                     })(order, conditions.indexOf(condition));
 
@@ -1088,7 +1000,7 @@ function UpdateConditionsContainer(order) {
     }
 
     var numDiv = editedLine.querySelector(`.property.${property} .conditionsNum`);
-    numDiv.textContent = conditions.length > 0 ? "" + conditions.length + "c" : "";
+    numDiv.textContent = conditions.length > 0 ? "" + conditions.length + "c" : "-";
 
     container.appendChild(buts);
     container.querySelectorAll(".btnPaste")[0].classList.toggle("disabled", copiedCondition == null);
@@ -1121,7 +1033,7 @@ function AddCondition(order) {
         QueueOrdersSave(true);
 
     UpdateOrdersTable();
-    ShowConditionEditor(order, order.item_conditions.length - 1);
+    OpenConditionEditor(order, order.item_conditions.length - 1);
 }
 
 function DeleteCondition(order, conditionIndex) {
@@ -1151,44 +1063,22 @@ function PasteCondition(order) {
         QueueOrdersSave(true);
 }
 
-function ShowConditionEditor(order, conditionIndex) {
-    if (conditionJustCopied) {
-        conditionJustCopied = false;
-        return;
-    }
 
-    condition = order.item_conditions[conditionIndex];
-    if (!condition)
-        return;
-    openedConditionsOrder = order;
-    openedConditionsIndex = conditionIndex;
-    var editor = $(".conditionEditor")[0];
-
-    $("#conditionEditorTitle")[0].textContent = GetOrderJobLabel(order) + " : " + GetOrderMaterialLabel(order);
-
-    editor.querySelector("#itemType").value = condition.item_subtype ? condition.item_subtype : condition.item_type;
-    editor.querySelector("#itemFlag").value = condition.flags ? condition.flags.join(",") : "";
-    editor.querySelector("#itemMaterial").value = condition.material ? condition.material : "";
-    editor.querySelector("#itemReactable").value = condition.reaction_product ? condition.reaction_product : "";
-    editor.querySelector("#operator").value = condition.condition;
-    editor.querySelector("#conditionValue").value = condition.value;
-    Show($(".conditionEditor"));
-}
 
 
 function CancelOrderChanges() {
     orders = [];
+    Toast("Cleared changes");
     ReadOrders();
 }
 
 async function ReadOrders() {
-
     if (waitForOrdersOperation)
         return;
 
     waitForOrdersOperation = true;
 
-    TraceActivity("Reading production orders...");
+    Trace("Reading production orders...");
     json = await window.api.ReadOrdersFile();
 
     if (json == null) {
@@ -1247,9 +1137,34 @@ async function ReadOrders() {
     });
 
     UpdateOrdersTable();
+    UpdateStocksWanted();
 
-    TraceActivity("Reading production: completed.");
+    Trace("Reading production: completed.");
     waitForOrdersOperation = false;
+}
+
+function UpdateStocksWanted() {
+    var cellsWanted = $(".cell.editable.hasJob[want]")
+
+    var itemsToUpdate = []
+    //update cells with wanted qtt (update value or remove wanted flag if job no longer exists)
+    cellsWanted.forEach(cell => {
+        var jobId = parseInt(cell.getAttribute("jobId"));
+        var job = jobs[jobId];
+        if (!job)
+            return;
+        itemsToUpdate.push(JobItemName(job));
+    });
+
+    orders.forEach(order => {
+        if (order.foundJob)
+            itemsToUpdate.push(JobItemName(order.foundJob));
+    });
+
+    itemsToUpdate = [...new Set(itemsToUpdate)];
+    itemsToUpdate.forEach(itemName => {
+        UpdateStockItemLine(itemName);
+    });
 }
 
 async function WriteOrders() {
@@ -1258,7 +1173,7 @@ async function WriteOrders() {
     if (!hasChanges)
         return;
 
-    TraceActivity("Writing orders...");
+    Trace("Writing orders...");
 
     fileHandle ??= await window.api.GetFileHandle();
     if (!fileHandle) {
@@ -1285,10 +1200,9 @@ async function WriteOrders() {
     if (config.debugNoWrite) {
         cl(JSON.stringify(clonedOrders, null, 2));
     } else {
-        cl(JSON.stringify(clonedOrders, null, 2));
         await window.api.WriteOrdersFile(JSON.stringify(clonedOrders, null, 2));
     }
-    TraceActivity("Writing orders: completed.");
+    Trace("Writing orders: completed.");
     waitForOrdersOperation = false;
 
     //clear new pushed orders
@@ -1302,6 +1216,7 @@ async function WriteOrders() {
     $(".editable.updating").forEach(el => el.classList.remove("updating"));
 
     UpdateOrdersTable();
+    UpdateStocksWanted();
 }
 
 function DeleteEmptyKeys(obj) {
@@ -1426,6 +1341,7 @@ function PrepareInput(input, onChangeCallback) {
 
     if (onChangeCallback != null) {
         input.addEventListener("change", (e) => { onChangeCallback(e); });
+        input.addEventListener("blur", (e) => { onChangeCallback(e); });
     }
 }
 
@@ -1460,8 +1376,21 @@ function MarkEdited(order) {
 
     if (line)
         line.classList.add("edited");
+
+    var outItem = order.foundJob?.io?.out?.[0];
+    if (outItem?.item) {
+        var itemName = JobItemName(order.foundJob);
+        UpdateStockItemLine(itemName);
+    }
 }
 
+
+function UpdateStockItemLine(itemName) {
+    CreateStockCell(itemName, "ALL");
+    config.selectedStocksMaterialsCols.forEach(matName => {
+        CreateStockCell(itemName, matName);
+    });
+}
 
 function GetOrderFromElement(element) {
     var id = element.closest(".orderRow")?.getAttribute("orderId");;
@@ -1574,8 +1503,21 @@ function OnRightClickOrEscape() {
         ApplyInventoryMaterialFilters();
     }
 
-    $("#ordersFilter")[0].value = "";
-    $("#ordersFilter")[0].dispatchEvent(new Event("change"));
+    var conditionEditor = $(".conditionEditor:not(.hidden)")[0];
+    if (conditionEditor) {
+        CloseConditionEditor();
+        return;
+    }
+
+    var orderEditor = $(".orderEditor:not(.hidden)")[0];
+    if (orderEditor) {
+        CloseOrderEditor();
+        return;
+    }
+
+    $("#generalFilter")[0].value = "";
+    $("#generalFilter")[0].dispatchEvent(new Event("change"));
+
 }
 
 function FilterChanged(search) {
@@ -1654,7 +1596,6 @@ function AutoFillFieldChanged(event) {
 }
 
 function CloseAutoFill(input) {
-    cl("close autofill" + input.getAttribute("id"));
     var sourceData = autoFillSource[input.getAttribute("id")];
 
     var list = input.nextElementSibling;
@@ -1722,10 +1663,32 @@ function ConditionEditHover(e) {
     var order = GetOrderFromElement(e.currentTarget);
 
     hoveredConditionsOrder = order;
-    cl(order.id);
     UpdateConditionsContainer(order);
 }
 
+function OpenConditionEditor(order, conditionIndex) {
+    if (conditionJustCopied) {
+        conditionJustCopied = false;
+        return;
+    }
+
+    condition = order.item_conditions[conditionIndex];
+    if (!condition)
+        return;
+    openedConditionsOrder = order;
+    openedConditionsIndex = conditionIndex;
+    var editor = $(".conditionEditor")[0];
+
+    $("#conditionEditorTitle")[0].textContent = GetOrderJobLabel(order) + " : " + GetOrderMaterialLabel(order);
+
+    editor.querySelector("#itemType").value = condition.item_subtype ? condition.item_subtype : condition.item_type ?? "";
+    editor.querySelector("#itemFlag").value = condition.flags ? condition.flags.join(",") : "";
+    editor.querySelector("#itemMaterial").value = condition.material ? condition.material : "";
+    editor.querySelector("#itemReactable").value = condition.reaction_product ? condition.reaction_product : "";
+    editor.querySelector("#operator").value = condition.condition;
+    editor.querySelector("#conditionValue").value = condition.value;
+    Show($(".conditionEditor"));
+}
 
 function CloseConditionEditor() {
     $(".conditionEditor")[0].classList.add("hidden");
@@ -1867,6 +1830,9 @@ function ToggleAutoRead() {
 
 
 function DeleteTask(order) {
+    if (!order)
+        return;
+
     if (order.deleted) {
         //remove property
         delete order.deleted;
@@ -1945,7 +1911,7 @@ function GetOrderMaterialLabel(order) {
     if (order["material_category"] != null) {
         text = order["material_category"].toString();
     } else {
-        text = order["material"];
+        text = order["material"] ?? "";
     }
     text = text.toLocaleLowerCase();
     text = text.replace("native_", "");
@@ -1965,6 +1931,7 @@ function ChangeWantedProduction(e) {
     var jobId = cell.getAttribute("jobId");
 
     cell.classList.add("updating");
+    cell.setAttribute("totalWant", qttDesired);
 
     var job = jobs[jobId];
     if (!job) {
@@ -1977,9 +1944,11 @@ function ChangeWantedProduction(e) {
     var ord;
     if (matchingOrders.length > 0) {
         ord = matchingOrders[0];
-        cl("existing order found")
 
     } else {
+        if (qttDesired <= 0)
+            return;
+
         ord = CreateNewOrder();
         ord.job = job.jobTypeName;
         var item = job.io?.out?.[0]?.item;
@@ -1995,48 +1964,52 @@ function ChangeWantedProduction(e) {
             ord.reaction = job.reactionName;
 
         AddNewOrder(ord);
-        cl("new order")
     }
 
     let min = Math.min(GetOrderBatchSize(), qttDesired);
     ord.amount_total = min;
     ord.amount_left = min;
-    cl(ord);
 
     ChangeDesiredOrderQuantity(ord, qttDesired, job);
 }
 
 function ChangeDesiredOrderQuantity(order, qttDesired, stockTask) {
 
-    if (stockTask) {
+    if (qttDesired <= 0) {
 
-        //stock goal: change the conditions for the order to stop producing
-        order.item_conditions = GetJobConditions(stockTask, qttDesired);
+        DeleteTask(order);
 
     } else {
 
-        //direct quantity order : change the amount_total and amount_left
-        var oldQtt = order.amount_total;
-        order.amount_total = qttDesired;
-        var diff = qttDesired - oldQtt;
-        cl("Chainging desired quantity from " + oldQtt + " to " + qttDesired);
-        if (diff == 0)
-            return;
-        order.amount_left += diff;
-    }
+        if (stockTask) {
 
-    var orderLine = ordersTable.querySelector(`div[orderId='${order.id}']`);
-    if (!orderLine) {
-        cl("Cannot find order line for order #" + order.id);
-        return;
+            //stock goal: change the conditions for the order for when to stop producing
+            order.item_conditions = GetJobConditions(stockTask, qttDesired);
+
+        } else {
+
+            //direct quantity order : change the amount_total and amount_left
+            var oldQtt = order.amount_total;
+            order.amount_total = qttDesired;
+            var diff = qttDesired - oldQtt;
+            if (diff == 0)
+                return;
+            order.amount_left += diff;
+        }
+
+        var orderLine = ordersTable.querySelector(`div[orderId='${order.id}']`);
+        if (!orderLine)
+            return;
+
+        orderLine.querySelector(".property.amount_left .inputNumber").value = order.amount_left;
+        orderLine.querySelector(".property.amount_total .inputNumber").value = order.amount_total;
+        MarkEdited(order);
     }
-    orderLine.querySelector(".property.amount_left .inputNumber").value = order.amount_left;
-    orderLine.querySelector(".property.amount_total .inputNumber").value = order.amount_total;
-    cl("Changed order " + order.id + ":" + order.job + " quantity target to " + order.amount_total + ", left: " + order.amount_left);
-    MarkEdited(order);
-};
+}
 
 function GetJobConditions(job, qttDesired) {
+
+    //cl("Getting conditions for job: " + job.jobTypeName + " desired qtt: " + qttDesired);
 
     var conditions = [];
     job.io.in.forEach(inp => {
@@ -2070,10 +2043,9 @@ function GetJobConditions(job, qttDesired) {
 
     if (job.isCrafts) {
         craftTypes.forEach(craftType => {
-            cl("prout");
             var condition = {
                 "condition": "LessThan",
-                "item_type": craftType,
+                "item_type": craftType.toUpperCase(),
                 "value": qttDesired,
             }
             if (job.material)
@@ -2092,7 +2064,7 @@ function GetJobConditions(job, qttDesired) {
                 if (key == "item") {
                     var item = outp[key];
                     if (item.typeName)
-                        condition["item_type"] = item.typeName;
+                        condition["item_type"] = NoS(item.typeName.toUpperCase());
                     if (item.subtypeName)
                         condition["item_subtype"] = item.subtypeName;
                     if (item.material)
@@ -2104,6 +2076,8 @@ function GetJobConditions(job, qttDesired) {
             conditions.push(condition);
         });
     }
+
+    //cl("Conditions generated: " + JSON.stringify(conditions, null, 2));
     return conditions;
 }
 
@@ -2116,6 +2090,9 @@ function GetOrderBatchSize() {
 }
 
 function FindActiveOrdersForJob(job) {
+    if (!job)
+        return [];
+
     return orders.filter(order => {
         if (order.job != job.jobTypeName)
             return false;
@@ -2136,6 +2113,7 @@ function FindActiveOrdersForJob(job) {
 }
 
 function CleanupDuplicateJobs() {
+    var totalMerges = 0;
     Object.values(orders).forEach(orderA => {
         if (orderA.deleted)
             return;
@@ -2161,7 +2139,7 @@ function CleanupDuplicateJobs() {
 
             targetCount += orderB.amount_total;
             leftCount += orderB.amount_left;
-
+            totalMerges++;
             DeleteTask(orderB);
             mergeds.push(orderB.id)
         });
@@ -2173,11 +2151,16 @@ function CleanupDuplicateJobs() {
         }
 
         if (mergeds.length > 0) {
-            alert("Merged " + mergeds.length + " order(s) into #" + orderA.id + " (" + orderA.job + "):\n\n> " + mergeds.join(",\n-"));
-            return;
+            Trace("Merged " + mergeds.length + " '" + orderA.id + "' order(s)");
         }
-
     });
+
+    if (totalMerges > 0) {
+        Toast("Merged " + totalMerges + " duplicate(s)");
+        UpdateOrdersTable();
+    } else {
+        Toast("No duplicate orders found");
+    }
 }
 
 
@@ -2213,7 +2196,6 @@ function StockEntryLabelGroup(fullName) {
 }
 
 function ItemGroupName(item) {
-    //cl(item)
     let name = item.typeName;
     return name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
 }
@@ -2250,7 +2232,6 @@ function CleanupJobsData() {
 }
 
 async function TryReadStocks() {
-
     if (!config.toggleAutoReadStocks && !mustReadStocks)
         return;
 
@@ -2262,20 +2243,24 @@ async function TryReadStocks() {
     tempStocks = {};
 
     let ok = false;
+
     while (!ok) {
         ok = await ReadStocksBatch();
         if (!ok)
             await pause(150);
     }
 
+    if (manualReadStocks)
+        Toast("Stocks acquired.");
+    manualReadStocks = false;
+
     readingStocks = false;
 }
 
 async function ReadStocksBatch() {
-    TraceActivity("Reading stocks...");
+    //Trace("Reading stocks...");
 
     data = await window.api.GetStocks()
-    //cl(data);
 
     if (data == null)
         return false;
@@ -2300,8 +2285,10 @@ async function ReadStocksBatch() {
     });
 
     if (data.completed) {
-        TraceActivity("Reading stocks: completed.");
+        Trace("Reading stocks: completed.");
         FinalizeStocks();
+        if (!emptyCellsCreated)
+            CreateEmptyStocksCells();
         await pause(1000);
         return true;
     }
@@ -2310,13 +2297,9 @@ async function ReadStocksBatch() {
 }
 
 function ResetStocksDisplay() {
-    sideA = $(".inventoryBody .itemsSide")[0];
-    sideB = $(".inventoryBody .valuesSide")[0];
-
-    sideA.innerHTML = "";
-    sideB.innerHTML = "";
-
-    FinalizeStocks();
+    emptyCellsCreated = false;
+    ClearStockTable();
+    CreateEmptyStocksCells();
 }
 
 function FinalizeStocks() {
@@ -2342,8 +2325,7 @@ function FinalizeStocks() {
     if (oldStocks == null)
         oldStocks = {};
 
-    var allMats = stocksMaterials;
-    allMats.forEach(mat => {
+    stocksMaterials.forEach(mat => {
         if (materialGroups.indexOf(mat) != -1)
             return;
 
@@ -2411,16 +2393,15 @@ function FinalizeStocks() {
 
         var stock = stocks[stockItemName] ?? [];
 
-        if (stocks.length > 0) {
+        if (stock.length > 0) {
             Object.keys(stock).forEach(mat => {
                 if (oldStocks[stockItemName][mat] == null)
                     oldStocks[stockItemName][mat] = 0;
 
-                var cell = GetStockCell(stockItemName, mat);
-
                 var diff = stock[mat] - oldStocks[stockItemName][mat];
                 if (diff != 0) {
-                    FlashCellChange(cell, diff);
+                    StockCellChanged(stockItemName, mat, diff);
+                    itemMatStockChanges.push(stockItemName + "_" + mat);
                 }
                 oldStocks[stockItemName][mat] = stock[mat];
 
@@ -2428,7 +2409,7 @@ function FinalizeStocks() {
                     mat = "INORGANIC"
             });
         } else {
-            var cell = GetStockCell(stockItemName, "");
+            CreateStockCell(stockItemName, "");
         }
     });
 
@@ -2468,24 +2449,28 @@ function CreateEmptyStocksCells() {
     var disp = $(".inventoryTable")[0].style.display
     $(".inventoryTable")[0].style.display = "none"
 
-    var pool = GetStockPool();
+    var pool = GetStockPool(true);
+    var validMaterials = stocksMaterials.filter(mat => config.selectedStocksMaterialsCols.indexOf(mat) != -1);
+
     pool.forEach(poolEntry => {
-        stocksMaterials.forEach(mat => {
-            if (config.selectedStocksMaterialsCols.indexOf(mat) == -1)
-                return;
-            GetStockCell(poolEntry, mat);
-        });
+        validMaterials.forEach(mat => { CreateStockCell(poolEntry, mat); });
     });
 
     $(".inventoryTable")[0].style.display = disp
+    emptyCellsCreated = true;
 }
 
-function GetStockPool() {
-    if (config.toggleShowMissingItems) {
+function GetStockPool(forceIncludeBuildables = false) {
+    if (config.toggleHideMissingItems || forceIncludeBuildables) {
         let pool = [];
         Object.values(gm.items).forEach(item => {
             if (itemTypesRequiringSubtypes.indexOf(item.typeName) != -1 && !item.subtypeName)
                 return;
+
+            var key = (item.isTypeOnly ? item.typeName : NoS(item.typeName) + "!" + item.subtypeName).toUpperCase();
+            if (itemHasJob[key] != true && (!stocks[key] || stocks[key]["ALL"] == 0)) {
+                return;
+            }
 
             var key = item.isTypeOnly ? item.typeName : NoS(item.typeName) + "!" + item.subtypeName;
             pool.push(key.toUpperCase());
@@ -2497,14 +2482,19 @@ function GetStockPool() {
 }
 
 
-function GetStockCell(stockEntry, material) {
-    var total = stocks[stockEntry] ? ["ALL"] + GetWantedProduction(stockEntry, null) : 0;
+function CreateStockCell(stockEntry, material) {
+    if (material == "")
+        return;
+
+    var totalStockWant = (stocks[stockEntry]?.["ALL"] > 0 ? 1 : 0) + GetWantedProduction(stockEntry, "ALL");
+    var buildable = itemHasJob[stockEntry] ? 1 : 0;
+    //cl("Creating stock cell for " + stockEntry + " / " + material + " (totalWant: " + totalStockWant + ", buildable: " + buildable + ")");
 
     //side header
     if (stockEntry == null || material == null || stockEntry == undefined)
         console.log("QUOI LA BAISE!?");
 
-    var myLabel = sideA.querySelector(".itemType[item='" + stockEntry + "']");
+    var myLabel = stockCellsLabels[stockEntry];
     if (!myLabel) {
         myLabel = document.createElement("div");
         myLabel.classList.add("cell", "itemType", "gameButton");
@@ -2522,16 +2512,15 @@ function GetStockCell(stockEntry, material) {
             ToggleDisplayedGraph(item);
         });
         */
+        stockCellsLabels[stockEntry] = myLabel;
         sideA.appendChild(myLabel);
     }
-    myLabel.setAttribute("totalVal", total)
+    myLabel.setAttribute("totalStockWant", totalStockWant)
+    myLabel.setAttribute("buildable", buildable)
 
-    if (material == "")
-        return;
 
     var tableHeader = $(".inventoryTableHeader")[0];
-    var header = tableHeader.querySelector(`.header[material='${material}']`);
-
+    var header = stockCellsHeaders[material];
     var index = config.selectedStocksMaterialsCols.indexOf(material)
     if (!header) {
         header = document.createElement("div");
@@ -2545,60 +2534,72 @@ function GetStockCell(stockEntry, material) {
         inventoryStaticHeader.appendChild(header);
 
         tableHeader.appendChild(header);
+        stockCellsHeaders[material] = header;
     }
     header.style.order = index;
 
-    var myMatCol = sideB.querySelector(".inventoryCol[material='" + material + "']");
+    var myMatCol = stockMatCols[material];
     //mat col
     if (!myMatCol) {
         myMatCol = document.createElement("div");
         myMatCol.classList.add("inventoryCol", "inventoryCol");
         myMatCol.setAttribute("material", material);
         sideB.appendChild(myMatCol);
-
+        stockMatCols[material] = myMatCol;
     }
     myMatCol.style.order = config.selectedStocksMaterialsCols.indexOf(material);
 
-    var matCell = myMatCol.querySelector(`.cell[item='${stockEntry}']`);
+    var matCell = stockCells[material + "_" + stockEntry];
     if (!matCell) {
         matCell = document.createElement("div");
         matCell.classList.add("cell", "editable");
         matCell.setAttribute("item", stockEntry);
         var stockDiv = document.createElement("div");
         stockDiv.classList.add("stock");
+        stockDiv.title = "Current stock quantity";
 
         var key = stockEntry + "/" + material;
 
-        /*
-        if (!itemJob[key])
-            cl("Missing job for " + key);
-        */
+        if (!itemJob[key]) {
+            //cl("Missing job for " + key);
+        }
 
-        matCell.classList.toggle("hasJob", itemJob[key] != null);
-        if (itemJob[key]) {
+        matCell.classList.toggle("hasJob", false);
+        if (itemJob[key] && material != "ALL") {
+            matCell.classList.toggle("hasJob", true);
             matCell.setAttribute("jobId", itemJob[key] != null ? itemJob[key].index : "")
             AddInventoryCellInput(matCell, stockEntry, material, ChangeWantedProduction);
         }
 
         matCell.appendChild(stockDiv);
         myMatCol.appendChild(matCell);
+        stockCells[material + "_" + stockEntry] = matCell;
     }
 
+    var input = matCell.querySelector("input.wanted");
+    //update input value unless its being edited
+    if (input && document.activeElement != input)
+        input.value = GetWantedProduction(stockEntry, material);
+
     var stocked = 0;
+    var wanted = GetWantedProduction(stockEntry, material);
     if (stocks[stockEntry] && stocks[stockEntry][material])
         stocked = stocks[stockEntry][material];
 
-    matCell.setAttribute("totalVal", stocked + GetWantedProduction(stockEntry, material));
+    matCell.setAttribute("stockWant", stocked + wanted);
+    matCell.setAttribute("want", wanted);
+    matCell.setAttribute("totalStockWant", totalStockWant);
+    matCell.setAttribute("buildable", buildable);
 
     var stockDiv = matCell.querySelector("div.stock");
     stockDiv.textContent = GetKiloValue(stocked);
+    if (stocked == 0) {
+        stockDiv.classList.add("empty");
+    } else {
+        stockDiv.classList.remove("empty");
+    }
 
     return matCell;
-}
-
-function RedrawStockTable() {
-    $(".inventoryTableHeader")[0].innerHTML = ""
-    $(".inventoryTable")[0].innerHTML = ""
 }
 
 function AddInventoryCellInput(cell, itemName, mat, onChangeCallback) {
@@ -2607,14 +2608,17 @@ function AddInventoryCellInput(cell, itemName, mat, onChangeCallback) {
     input.classList.add("inputNumber", "wanted");
     input.setAttribute("itemType", itemName);
     input.setAttribute("material", mat);
-    input.value = GetWantedProduction(itemName, mat);
+    input.title = "Desired quantity in stocks - affects productions orders";
     PrepareInput(input, onChangeCallback);
     cell.appendChild(input);
 }
 
-function FlashCellChange(cell, diff) {
-    if (!cell)
+function StockCellChanged(itemName, matName, diff) {
+    var cell = stockCells[matName + "_" + itemName];
+    if (!cell) {
         return;
+    }
+
     if (diff > 0) {
         cell.classList.add("popUp");
     } else if (diff < 0) {
@@ -2638,6 +2642,9 @@ function CloseMaterialsPicker() {
 function OpenMaterialsPicker() {
     UpdateInventoryMaterialsPicker();
     $(".inventoryMaterialsPickerHost ")[0].classList.remove("hidden");
+    $(".inventoryMaterialsPickerHost input")[0].value = ''
+    $(".inventoryMaterialsPickerHost input")[0].focus();
+
 }
 
 function UpdateInventoryMaterialsPicker() {
@@ -2728,7 +2735,6 @@ async function ToggleInventoryMaterialSelected(mat, noBuild) {
 }
 
 function SetMaterialSelectedState(mat, selected) {
-    cl("SetMaterialSelectedState " + mat + " to " + selected);
     if (mat == "ALL")
         return;
 
@@ -2761,7 +2767,7 @@ function ApplyInventoryMaterialFilters() {
 
         cell.style.order = config.selectedStocksMaterialsCols.indexOf(mat);
     });
-    CreateEmptyStocksCells()
+    ResetStocksDisplay()
     SortStockCells();
     UpdateInventoryItemFilter(lastInventoryFilter ?? '');
 }
@@ -2847,7 +2853,7 @@ function DisplayableMaterialName(mat, tagMode = 0) {
     if (materialGroups.indexOf(mat) == -1) {
         var matInfo = gm.materials[mat];
         if (!matInfo) {
-            //cl("missing material info for " + mat);
+            cl("missing material info for " + mat);
         } else {
             matInfo.Types.forEach(type => {
                 if (matString == type)
@@ -2869,9 +2875,13 @@ function GetKiloValue(value) {
 
 function InventoryMaterialsFilterEnter(filterValue) {
     if (filterValue != '') {
-        if (isShiftPressed) {
+        if (IsShiftPressed()) {
             var visibles = $(".inventoryMaterialsPicker .materialOption:not(.hidden)");
             if (visibles.length > 0) {
+                if (visibles.length > 20) {
+                    alert("Too many visible materials to toggle selection at once (max 20). Please refine your filter.");
+                    return;
+                }
 
                 var firstVisible = Array.from(visibles).reduce((prev, curr) => {
                     if (prev.getAttribute("material") == "ALL")
@@ -2965,6 +2975,18 @@ function SortInventoryMaterialPicker() {
 }
 
 function UpdateInventoryItemFilter(search) {
+    if (search != '') {
+        if (config.toggleHideMissingItems && !forceAllItemsVisible) {
+            forceAllItemsVisible = true;
+            ToggleOption('hideMissingItems');
+        }
+    } else {
+        if (forceAllItemsVisible) {
+            forceAllItemsVisible = false;
+            ToggleOption('hideMissingItems');
+        }
+    }
+
     lastInventoryFilter = search;
     var itemCells = $(".inventoryBody .cell[item]");
     itemCells.forEach(cell => {
@@ -2978,8 +3000,24 @@ function UpdateInventoryItemFilter(search) {
 }
 
 function EditOrder(order) {
+    if (!order)
+        return;
+
     $(".orderEditor")[0].classList.remove("hidden");
+    var input = $(".orderEditor input")[0];
+    input.value = '';
     editedOrder = order;
+
+    if (order.foundJob) {
+        input.value = order.foundJob.name;
+        OrderEdited('job')
+    }
+    input.focus();
+    $(".interpretedConditions")[0].innerHTML = "";
+    $("#conditionCode")[0].value = "";
+    $(".outputConditions")[0].innerHTML = "";
+
+    input.dispatchEvent(new Event('change'));
 
 }
 
@@ -2991,7 +3029,8 @@ function OrderEdited(tag) {
             job = jobs.find(j => j.name == jobName);
             if (job != null) {
                 $(".orderEditor #jobName")[0].classList.remove("error");
-                editedOrder.job = job;
+                editedOrder.jobInfo = job;
+                editedOrder.job = job.jobTypeName;
                 var code = "10\n";
                 if (job.io?.in?.length > 0) {
                     job.io.in.forEach(input => {
@@ -3000,15 +3039,29 @@ function OrderEdited(tag) {
                                 code += ":" + flag + " ";
                             });
                         }
-                        if (input.material)
-                            code += "!" + input.material + " ";
+                        var item = input.item;
+                        if (item.material || (item.material_category && item.material_category.length > 0))
+                            code += "!" + (item.material ?? item.material_category[0]) + " ";
 
-                        if (input.item_type)
-                            code += input.item_type + " ";
+                        if (item.subtypeName) {
+                            code += item.subtypeName + " ";
+                        } else if (item.typeName) {
+                            code += item.typeName + " ";
+                        }
 
                         code += ">10\n"
                     });
                 }
+
+                if (job.material != "")
+                    editedOrder.material = job.material;
+
+                if (job.material_category && job.material_category.length > 0)
+                    editedOrder.material_category = job.material_category;
+
+                if (job.item_typeName && job.item_typeName != "")
+                    editedOrder.item_subtype = job.item_typeName;
+
                 $("#conditionCode")[0].value = code;
                 OrderEdited("cond");
             } else {
@@ -3017,6 +3070,8 @@ function OrderEdited(tag) {
             break;
 
         case "qtt":
+            editedOrder.amount_left = parseInt($(".orderEditor #itemQtt")[0].value);
+            editedOrder.amount_total = parseInt($(".orderEditor #itemQtt")[0].value);
             break;
 
         case "cond":
@@ -3027,18 +3082,12 @@ function OrderEdited(tag) {
             inter.textContent = "";
             var basicLineDone = false;
             editedOrder.item_conditions = []
-            job = editedOrder.job;
+            job = editedOrder.jobInfo;
 
             fuseItemsTypes = new Fuse(sortedItemTypesIds);
             fuseItemsSubTypes = new Fuse(sortedItemSubTypesIds);
             fuseMats = new Fuse(Object.keys(gm.materials));
-            var flags = [];
-            Object.keys(gm.job_item_flags1).forEach(key => { flags.push(gm.job_item_flags1[key]) });
-            Object.keys(gm.job_item_flags2).forEach(key => { flags.push(gm.job_item_flags2[key]) });
-            Object.keys(gm.job_item_flags3).forEach(key => { flags.push(gm.job_item_flags3[key]) });
-            flags = [...new Set(flags)];
-            flags = flags.filter(f => f != "nil");
-            fuseFlags = new Fuse(flags);
+            fuseFlags = new Fuse(gm.itemFlags);
 
             lines.forEach((line) => {
 
@@ -3047,7 +3096,7 @@ function OrderEdited(tag) {
 
                 var codeLine = "";
                 var value = parseInt(line.trim());
-                var tags = [];
+                var flags = [];
                 var operator = "";
                 let textOperator = "";
                 var itemTypeProduced = "";
@@ -3061,13 +3110,14 @@ function OrderEdited(tag) {
                     codeLine = ""
                     basicLineDone = true;
 
-                    var produced = job.io?.out[0]?.item_typeName;
+                    var producedType = job.io?.out[0]?.item_typeName ?? job.io?.out[0]?.item?.typeName;
+                    $(".orderEditor #itemQtt")[0].value = Math.min(GetOrderBatchSize(), value)
 
-                    if (produced != "" && produced != null) {
+                    if (producedType != "" && producedType != null) {
                         textOperator = "LessThan";
-                        itemTypeProduced = produced;
-                        itemSubTypeProduced = job.io?.out[0]?.item_subtypeName;
-                        codeLine = "Stocks of <b>" + (itemSubTypeProduced ? itemSubTypeProduced : produced) + "</b> < <b>" + value + "</b>"
+                        itemTypeProduced = producedType;
+                        itemSubTypeProduced = job.io?.out[0]?.item_subtypeName ?? job.io?.out[0]?.item?.subtypeName;
+                        codeLine = "Stocks of <b>" + (itemSubTypeProduced ? ItemNameWithoutPrefix(itemSubTypeProduced) : producedType) + "</b> < <b>" + value + "</b>"
                     } else {
                         codeLine = "<u>[Job's produced item not found]</u>";
                     }
@@ -3085,9 +3135,9 @@ function OrderEdited(tag) {
                     line = line.replace("." + itemSubTypeProduced, "");
 
                     while (line.includes(":")) {
-                        var tag = line.split(":")[1].split(" ")[0].trim();
-                        line = line.replace(":" + tag, "").trim();
-                        tags.push(tag);
+                        var flag = line.split(":")[1].split(" ")[0].trim();
+                        line = line.replace(":" + flag, "").trim();
+                        flags.push(flag);
                     }
                     //find position of first characters among < > = !
                     var operators = ["<", ">", "==", "=", "~=", "<=", ">="];
@@ -3126,9 +3176,9 @@ function OrderEdited(tag) {
                             value = -1
                     }
 
-                    for (var i = 0; i < tags.length; i++) {
-                        var fuseFlag = fuseFlags.search(tags[i], { limit: 1 })[0];
-                        tags[i] = fuseFlag ? fuseFlag.item : "?" + tags[i] + "?";
+                    for (var i = 0; i < flags.length; i++) {
+                        var fuseFlag = fuseFlags.search(flags[i], { limit: 1 })[0];
+                        flags[i] = fuseFlag ? fuseFlag.item : "?" + flags[i] + "?";
                     };
 
                     var itemTypeProduced = line.trim();
@@ -3151,8 +3201,8 @@ function OrderEdited(tag) {
 
                     codeLine = ""
 
-                    if (tags.length > 0) {
-                        tags.forEach(t => {
+                    if (flags.length > 0) {
+                        flags.forEach(t => {
                             if (codeLine != "")
                                 codeLine += ", ";
 
@@ -3217,11 +3267,11 @@ function OrderEdited(tag) {
                 if (mat != "")
                     condition["material"] = mat;
                 if (itemTypeProduced != "items")
-                    condition["item_type"] = itemTypeProduced;
+                    condition["item_type"] = NoS(itemTypeProduced.toUpperCase());
                 if (itemSubTypeProduced != "items")
-                    condition["item_subtype"] = itemSubTypeProduced;
-                if (tags.length > 0) {
-                    condition["tags"] = tags;
+                    condition["item_subtype"] = itemSubTypeProduced.toUpperCase();
+                if (flags.length > 0) {
+                    condition["flags"] = flags;
                 }
 
                 inter.innerHTML += codeLine + "<br/>";
@@ -3253,18 +3303,46 @@ function GetWantedProduction(item, mat) {
     if (myOrders.length == 0)
         return 0;
 
+    cl("Wanted production for " + item + " / " + mat + " is " + myOrders[0].amount_total);
+
+    var outItem = job.io?.out?.[0];
+    if (outItem) {
+        var prodCondition = myOrders[0].item_conditions?.find(cond => {
+            var a = (cond.item_type ?? "") + "!" + (cond.item_subtype ?? "");
+            var b = (outItem.item.typeName ?? "") + "!" + (outItem.item.subtypeName ?? "");
+            return a == b;
+        });
+
+        if (prodCondition)
+            return prodCondition.value;
+    }
+
     return myOrders[0].amount_total;
 }
 
+
+function IsShiftPressed() {
+    return wasShiftPressed && keysDown.length != 0;
+}
+
+function IsCtrlPressed() {
+    return wasCtrlPressed && keysDown.length != 0;
+}
+
 function OnGeneralKeyDown(e) {
-    if (e.shiftKey)
-        isShiftPressed = true;
+    keysDown.push(e.key);
 
-    if (e.ctrlKey)
-        isCtrlPressed = true;
+    if (e.key == "Shift")
+        wasShiftPressed = true;
 
-    if (e.key == "Enter")
-        enterKeyDown = true;
+    if (e.key == "Control")
+        wasCtrlPressed = true;
+
+    if (e.key == "a" && wasCtrlPressed)
+        e.preventDefault();
+
+    if (IsCtrlPressed() || IsShiftPressed())
+        $("body")[0].classList.add("ctrlOrShift");
 
     var stockMatPicker = $(".inventoryMaterialsPickerHost:not(.hidden)")[0];
     if (stockMatPicker) {
@@ -3283,7 +3361,7 @@ function OnGeneralKeyDown(e) {
     if (document.activeElement && document.activeElement.tagName === "INPUT" || document.activeElement.tagName === "TEXTAREA")
         return;
 
-    if (!e.ctrlKey) {
+    if (!IsCtrlPressed()) {
         var searchers = $("input.autofocus");
         //convert searchers to array
         searchers = Array.from(searchers);
@@ -3296,6 +3374,208 @@ function OnGeneralKeyDown(e) {
         }
     }
 }
+
+function OnGeneralKeyUp(e) {
+
+    if (PopInfoActive())
+        return;
+
+    var key = e.key.toLocaleLowerCase();
+
+    if (key == "escape") {
+        e.preventDefault();
+        OnRightClickOrEscape();
+        KeyUpEnd(e);
+        return;
+    }
+
+    if ($(".inventoryMaterialsPickerHost:not(.hidden)")[0]) {
+        if (e.key == "Enter")
+            InventoryMaterialsFilterEnter()
+        KeyUpEnd(e);
+        return;
+    }
+
+    if ($(".orderEditor:not(.hidden)")[0]) {
+        if (e.key == "Enter" && (IsShiftPressed() || IsCtrlPressed())) {
+            e.preventDefault();
+            document.activeElement.blur();
+            if (IsShiftPressed()) {
+                //quick order
+                delete editedOrder.item_conditions;
+                editedOrder.frequency = "OneTime";
+                //unfocus all elements
+                AddNewOrder(editedOrder);
+            } else if (IsCtrlPressed()) {
+                editedOrder.frequency = "Daily";
+                AddNewOrder(editedOrder);
+            }
+            CloseOrderEditor();
+        }
+        KeyUpEnd(e);
+        return;
+    }
+
+    if (IsCtrlPressed() || IsShiftPressed()) {
+
+        var double = IsCtrlPressed() && IsShiftPressed();
+
+        if (key == "a") {
+            e.preventDefault();
+            PauseAllTasks();
+        }
+
+        if (key == "z") {
+            //cancel changes
+            e.preventDefault();
+            CancelOrderChanges()
+        }
+
+        if (key == "e") {
+            e.preventDefault();
+            ToggleOption("hideMissingItems");
+        }
+
+        if (key == "r") {
+            e.preventDefault();
+            if (double) {
+                ToggleOption("AutoReadOrders");
+            } else {
+                ReadOrders();
+            }
+        }
+
+        if (key == "t") {
+            e.preventDefault();
+            if (double) {
+                ToggleOption("AutoReadStocks");
+            } else {
+                ReadStocksBatch();
+            }
+        }
+
+
+
+
+
+        if (key == "q") {
+            e.preventDefault();
+            OpenMaterialsPicker();
+        }
+
+        if (key == "s") {
+            e.preventDefault();
+            if (double) {
+                ToggleOption("AutoSaveOrders");
+            } else {
+                WriteOrders();
+            }
+        }
+
+        if (key == "d") {
+            e.preventDefault();
+            OrderToolDuplicate()
+        }
+
+        if (key == "f") {
+            e.preventDefault();
+            CleanupDuplicateJobs()
+        }
+
+
+        if (key == "g") {
+            e.preventDefault();
+            ToggleGrouping()
+        }
+
+
+
+
+        if (key == "w") {
+            e.preventDefault();
+            ToggleOption('LessColumns')
+        }
+
+        if (key == "x") {
+            //delete
+            e.preventDefault();
+            if ($(".inventoryMaterialsPickerHost:not(.hidden)")[0]) {
+                ClearStocksMaterialsFilter();
+            } else {
+                DeleteTask(currentHoverOrder);
+            }
+        }
+
+        if (key == "c") {
+            //create
+            e.preventDefault();
+            EditOrder(CreateNewOrder());
+        }
+
+        if (key == "v") {
+            e.preventDefault();
+            OrderToolMax();
+        }
+
+        if (key == "b") {
+            e.preventDefault();
+            OrderToolMin();
+        }
+
+
+        //space
+        if (key == " ") {
+            if (currentHoverOrder) {
+                if (double) {
+                    e.preventDefault();
+                    OrderToolStopAllAfter();
+                } else {
+                    e.preventDefault();
+                    OrderToolStopMe();
+                }
+            }
+        }
+
+        if (key == "tab") {
+            e.preventDefault();
+            if (displayedTab == "inventory") {
+                SetTab("orders");
+            } else {
+                SetTab("inventory");
+            }
+        }
+
+        if (key == "1" || key == "&") {
+            e.preventDefault();
+            ClearStocksMaterialsFilter();
+        }
+        if (key == "2" || key == "é") {
+            e.preventDefault();
+            ToggleOption('HideLogs')
+        }
+
+    }
+    KeyUpEnd(e);
+}
+
+function KeyUpEnd(e) {
+    keysDown = keysDown.filter(k => k != e.key);
+
+    if (keysDown.length == 0) {
+        wasCtrlPressed = false;
+        wasShiftPressed = false;
+        $("body")[0].classList.remove("ctrlOrShift");
+    }
+}
+
+function ClearKeys() {
+    $("body")[0].classList.remove("ctrlOrShift");
+    keysDown = [];
+    wasCtrlPressed = false;
+    wasShiftPressed = false;
+}
+
+
 
 function CompareDepth(a, b) {
     if (a === b)
@@ -3341,7 +3621,7 @@ function PopInfo(title, message, sub, buttons = null, closeCallback = null, wait
                     break;
 
                 case "RESET APP PATHS":
-                    TraceActivity("Resetting paths.");
+                    Trace("Resetting paths.");
                     button.addEventListener("click", (e) => {
                         e.stopPropagation();
                         ResetAppPaths();
@@ -3414,7 +3694,7 @@ function GetMaterialTypes(mat) {
 }
 
 
-function TraceActivity(msg) {
+function Trace(msg) {
     var pop = document.createElement("div");
     pop.classList.add("traceActivity");
     pop.innerHTML = msg;
@@ -3427,10 +3707,29 @@ function TraceActivity(msg) {
 
     setTimeout(() => {
         const p = pop;
-        if ($(".traces")[0].contains(p))
-            $(".traces")[0].removeChild(p);
+        if (p?.parentElement)
+            p.parentElement.removeChild(p);
     }, 3000);
 }
+
+function Toast(msg) {
+    var pop = document.createElement("div");
+    pop.classList.add("toastActivity");
+    pop.innerHTML = msg;
+
+    var firstChild = $(".toasts")[0].firstChild;
+    $(".toasts")[0].insertBefore(pop, firstChild);
+
+    if (firstChild.textContent == msg)
+        firstChild.remove();
+
+    setTimeout(() => {
+        const p = pop;
+        if (p?.parentElement)
+            p.parentElement.removeChild(p);
+    }, 5000);
+}
+
 
 function ClearStocksMaterialsFilter() {
     config.selectedStocksMaterialsCols = ["ALL"];
@@ -3987,6 +4286,10 @@ function GuessJobItemAssociation(job) {
     if (job.isCrafts) {
         key = 'CRAFTS' + matKey;
         itemJob[key] = job;
+        itemHasJob["CRAFTS"] = true;
+
+        key = 'CRAFTS/ALL';
+        itemJob[key] = job;
         return;
     }
 
@@ -4013,12 +4316,12 @@ function GuessJobItemAssociation(job) {
             return;
         }
 
-        key = item.isTypeOnly ? item.typeName : NoS(item.typeName) + "!" + item.subtypeName
-
-        if (key != null) {
-            key = key.toUpperCase() + matKey;
-            itemJob[key] = job;
-        }
+        key = (item.isTypeOnly ? item.typeName : NoS(item.typeName) + "!" + item.subtypeName).toUpperCase();
+        itemHasJob[key] = true;
+        var fullKey = key + matKey;
+        itemJob[fullKey] = job;
+        var allKey = key + "/ALL";
+        itemJob[allKey] = job;
     });
 }
 
@@ -4192,8 +4495,7 @@ function TypeIsCraft(typeName) {
 
 function SetOrderTools(element) {
     var tools = $("#orderTools")[0];
-    if (!tools)
-    {
+    if (!tools) {
         //duplicate template dom element
         var template = $("#orderToolsTemplate")[0];
         tools = template.cloneNode(true);
@@ -4214,7 +4516,11 @@ function OrderToolStopMe() {
     if (!currentHoverOrder)
         return;
 
-    PauseTask(currentHoverOrder, PAUSECHANNEL_ONETASK);
+    if (IsTaskPaused(currentHoverOrder, PAUSECHANNEL_ONETASK)) {
+        ResumeTask(currentHoverOrder, PAUSECHANNEL_ONETASK);
+    } else {
+        PauseTask(currentHoverOrder, PAUSECHANNEL_ONETASK);
+    }
     UpdateOrdersTable();
 }
 
@@ -4263,4 +4569,34 @@ function OrderToolDelete() {
         return;
 
     DeleteTask(currentHoverOrder);
+}
+
+function ToggleGrouping() {
+    ToggleOption('stockSorting');
+    SortStockCells();
+    UpdateOrdersLabels()
+}
+
+function ConditionCoderFocused() {
+    //select first line of textarea
+    $("#conditionCode")[0].select();
+
+    var area = $("#conditionCode")[0];
+    var end = area.value.indexOf('\n');
+
+    area.focus();
+    area.setSelectionRange(0, end === -1 ? area.value.length : end);
+}
+
+function JobItemName(job) {
+    if (job.io.out.length == 0)
+        return "";
+    var outItem = job.io.out[0];
+    if (!outItem.item)
+        return "";
+    return outItem.item.typeName + (outItem.item.subtypeName ? "!" + outItem.item.subtypeName : "");
+}
+
+function JobMaterialName(job) {
+    return (job.material != "" ? job.material : (job.material_category != null && job.material_category.length > 0 ? job.material_category[0] : "ALL")).toUpperCase();
 }

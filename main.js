@@ -70,7 +70,88 @@ function CreateConfigFile() {
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(config));
 }
 
+ipcMain.handle("ResetApp", async (e) => {
+    jobsInfosStartIndex = 0;
+    gameInfoLuaUpdated = false;
+    readingStuff = false;
+    stocksReaderStartIndex = 0;
+});
 
+ipcMain.handle("GetGameStatus", async (e) => {
+    if (!PathsReady())
+        return;
+
+
+    return new Promise(async (resolve, reject) => {
+        let path = config.dwarfPath + "\\dfhack-run.exe";
+
+        let luaScriptPath = app.getAppPath() + "\\gameStatus.lua";
+        cl("Executing dfhack-run... " + luaScriptPath);
+        let args = ["lua", "-f", luaScriptPath];
+
+        fs.access(path, fs.constants.F_OK | fs.constants.X_OK, (err) => {
+            if (err) {
+                data = {
+                    error: {
+                        title: "Waiting for Dwarf Fortress...",
+                        msg: "Please start the game and load a Fortress.",
+                        context: "GetGameStatus1",
+                        buttons: ["WAIT", "RESET APP PATHS"]
+                    }
+                };
+                resolve(data);
+                return;
+            }
+
+            var oldClipboard = clipboard.readText();
+            execFile(path, args, (error, stdout, stderr) => {
+                if (error) {
+                    data = {
+                        error: {
+                            title: "Waiting for Dwarf Fortress...",
+                            msg: "Please start the game and load a Fortress.",
+                            context: "GetGameStatus2",
+                            buttons: ["WAIT", "RESET APP PATHS"]
+                        }
+                    };
+                    cl(data);
+                    clipboard.writeText(oldClipboard);
+                    resolve(data);
+                    return;
+                }
+
+                let data = clipboard.readText();
+                try {
+                    data = data.replace(/(,)+}/g, "}");
+                    data = data.replace(/(,)+]/g, "]");
+                    data = JSON.parse(data);
+                    clipboard.writeText(oldClipboard);
+                    resolve(data);
+
+                } catch (e) {
+                    data = {
+                        error: {
+                            title: "Data parsing error",
+                            msg: "An error occurred while parsing data pulled from Dwarf Fortress. <br>" + e + "<br><br>" + data,
+                            context: "GetGameStatus3",
+                            buttons: ["CONTINUE", "RESET APP PATHS"]
+                        }
+                    };
+                    readingStuff = false;
+                    cl(data);
+                    clipboard.writeText(oldClipboard);
+                    resolve(data);
+                }
+            });
+            clipboard.writeText(oldClipboard);
+
+        });
+
+    }).finally(() => {
+        readingStuff = false;
+    });
+
+});
 
 ipcMain.handle("GetGameInfos", async (e) => {
     if (!PathsReady())
@@ -127,6 +208,7 @@ ipcMain.handle("GetGameInfos", async (e) => {
                         }
                     };
                     cl(data);
+                    clipboard.writeText(oldClipboard);
                     resolve(data);
                     return;
                 }
@@ -134,11 +216,11 @@ ipcMain.handle("GetGameInfos", async (e) => {
                 try {
                     //read from clipboard file
                     let data = clipboard.readText();
-                    clipboard.writeText(oldClipboard);
                     //replace ",}" with "}" to fix invalid JSON
                     data = data.replace(/(,)+}/g, "}");
                     data = data.replace(/(,)+]/g, "]");
                     data = JSON.parse(data);
+                    clipboard.writeText(oldClipboard);
                     resolve(data);
 
                 } catch (e) {
@@ -152,9 +234,11 @@ ipcMain.handle("GetGameInfos", async (e) => {
                     };
                     readingStuff = false;
                     cl(data);
+                    clipboard.writeText(oldClipboard);
                     resolve(data);
                 }
             });
+            clipboard.writeText(oldClipboard);
         });
 
     }).finally(() => {
@@ -215,6 +299,7 @@ ipcMain.handle("GetJobsInfos", async () => {
                         }
                     };
                     cl(data);
+                    clipboard.writeText(oldClipboard);
                     resolve(data);
                     return;
                 }
@@ -222,13 +307,12 @@ ipcMain.handle("GetJobsInfos", async () => {
                 try {
                     //read from clipboard file
                     let data = clipboard.readText();
-                    clipboard.writeText(oldClipboard);
 
                     data = data.replace(/,}/g, "}");
                     data = data.replace(/,]/g, "]");
 
                     data = JSON.parse(data);
-                    if (data.jobs.length == 0) {
+                    if (data.jobs.length == 0 && data.completed == false) {
                         data = {
                             error: {
                                 title: "Waiting for Job Orders",
@@ -238,21 +322,25 @@ ipcMain.handle("GetJobsInfos", async () => {
                             }
                         };
                         cl(data);
+                        clipboard.writeText(oldClipboard);
                         resolve(data);
                         return;
                     }
                     jobsInfosStartIndex = data.pauseAtIndex;
+                    clipboard.writeText(oldClipboard);
                     resolve(data);
 
                 } catch (e) {
                     data = "wait"
                     cl(data);
+                    clipboard.writeText(oldClipboard);
                     resolve(data);
                     readingStuff = false;
                     return;
 
                 }
             });
+            clipboard.writeText(oldClipboard);
         });
 
     }).finally(() => {
@@ -311,6 +399,7 @@ ipcMain.handle("GetStocks", async () => {
                         }
                     };
                     cl(data);
+                    clipboard.writeText(oldClipboard);
                     resolve(data);
                     return;
                 }
@@ -329,11 +418,12 @@ ipcMain.handle("GetStocks", async () => {
                         };
                         cl(data);
                         readingStuff = false;
+                        clipboard.writeText(oldClipboard);
                         resolve(data);
                         return;
                     }
-                    resolve(data);
                     clipboard.writeText(oldClipboard);
+                    resolve(data);
 
                 } catch (e) {
                     if (error) {
@@ -347,12 +437,15 @@ ipcMain.handle("GetStocks", async () => {
                         };
                         cl(data);
                         readingStuff = false;
+                        clipboard.writeText(oldClipboard);
                         resolve(data);
                         return;
                     }
                     reject(e);
                 }
             });
+            clipboard.writeText(oldClipboard);
+
         });
     }).finally(() => {
         readingStuff = false;
@@ -604,6 +697,7 @@ const CreateWindow = () => {
     }
 
     globalShortcut.register("CommandOrControl+R", () => { });
+    globalShortcut.register("CommandOrControl+Shift+R", () => { });
     globalShortcut.register("CommandOrControl+W", () => { });
     globalShortcut.register("F5", () => { });
 
@@ -702,3 +796,5 @@ function ProcessStockData(rawData) {
 async function pause(milliseconds) {
     return new Promise(resolve => setTimeout(resolve, milliseconds));
 }
+
+

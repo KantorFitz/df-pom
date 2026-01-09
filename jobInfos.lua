@@ -14,7 +14,7 @@ for k,v in pairs(jobs) do
         output = output .. '\"item_subtype\":' .. '\"' .. tostring(v.item_subtype) .. '\",'
         output = output .. '\"mat_type\":' .. '\"' .. tostring(v.mat_type) .. '\",'
         output = output .. '\"mat_index\":' .. '\"' .. tostring(v.mat_index) .. '\",'
-        local matCat = ""
+        local matCat = ''
         if df.job_material_category[v.material_category] ~= nil then
             matCat = tostring(df.job_material_category[v.material_category])
         end
@@ -28,8 +28,7 @@ for k,v in pairs(jobs) do
     end
 end
 
-local completed = i < (startJobIndex + maxJobs);
+local completed = i < (startJobIndex + maxJobs) and i > 0;
 output = output .. '],\"pauseAtIndex\":' .. tostring(i) .. ', \"completed\":' .. tostring(completed) .. '}'; 
 dfhack.internal.setClipboardTextCp437(output)
-print(output);
 

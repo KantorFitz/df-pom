@@ -9,4 +9,6 @@ contextBridge.exposeInMainWorld("api", {
     GetStocks: () => ipcRenderer.invoke("GetStocks"),
     GetJobsInfos: () => ipcRenderer.invoke("GetJobsInfos"),
     ResetAppPaths: () => ipcRenderer.invoke("ResetAppPaths"),
+    GetGameStatus: () => ipcRenderer.invoke("GetGameStatus"),
+    ResetApp: () => ipcRenderer.invoke("ResetApp"),
 });
