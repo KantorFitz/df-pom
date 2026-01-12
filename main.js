@@ -1,4 +1,5 @@
-const { app, BrowserWindow, ipcMain, dialog, globalShortcut, clipboard } = require("electron");
+const { app, BrowserWindow, shell, ipcMain, dialog, globalShortcut, clipboard } = require("electron");
+
 const path = require("path");
 const fs = require("fs");
 const { runInThisContext } = require("vm");
@@ -16,6 +17,8 @@ var readingStuff = false;
 var jobsInfosStartIndex = 0;
 var jobsInfosMaxScans = 1000;
 var gameInfoLuaUpdated = false;
+
+
 
 function cl(msg) { console.log(msg); }
 
@@ -105,6 +108,8 @@ ipcMain.handle("GetGameStatus", async (e) => {
 
             var oldClipboard = clipboard.readText();
             execFile(path, args, (error, stdout, stderr) => {
+                let data = clipboard.readText();
+
                 if (error) {
                     data = {
                         error: {
@@ -120,7 +125,6 @@ ipcMain.handle("GetGameStatus", async (e) => {
                     return;
                 }
 
-                let data = clipboard.readText();
                 try {
                     data = data.replace(/(,)+}/g, "}");
                     data = data.replace(/(,)+]/g, "]");
@@ -608,7 +612,7 @@ async function SendToDF() {
                         data = {
                             error: {
                                 title: "Execution error",
-                                msg: "An error occurred while executing dfhack-run.exe. Check if DFHack installed and if a Fortress mode game is running.",
+                                msg: "An error occurred while executing dfhack-run.exe. Check if DFHack installed and if a Fortress mode game is running.\n" + error,
                                 context: "SendToDF3",
                                 buttons: ["CONTINUE", "RESET APP PATHS"]
                             }
@@ -685,6 +689,8 @@ const CreateWindow = () => {
         height: config.windowPosition ? config.windowPosition.height : 800,
         x: config.windowPosition ? config.windowPosition.x : undefined,
         y: config.windowPosition ? config.windowPosition.y : undefined,
+        setAutoHideMenuBar: true,
+        fullscreen: true,
         webPreferences: {
             preload: path.join(__dirname, "preload.js")
         }
@@ -702,6 +708,13 @@ const CreateWindow = () => {
     globalShortcut.register("F5", () => { });
 
     mainWindow.loadFile('index.html')
+
+
+    mainWindow.on('new-window', function (e, url) {
+        e.preventDefault();
+        cl(url);
+        shell.openExternal(url);
+    });
 
     mainWindow.on("move", () => {
         const b = mainWindow.getBounds();
@@ -796,5 +809,4 @@ function ProcessStockData(rawData) {
 async function pause(milliseconds) {
     return new Promise(resolve => setTimeout(resolve, milliseconds));
 }
-
 

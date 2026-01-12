@@ -22,7 +22,6 @@ var autoFillSource = {};
 var errorCallback;
 var autoReadStocks = false;
 
-var lastInventoryFilter = "";
 var lastFilterChange = 0;
 var filterDelayer = null;
 var hoveredNumInput = null;
@@ -30,7 +29,6 @@ var hoveredConditionsOrder;
 var gameStatus;
 var lastGameStatusCheck = 0;
 
-var materialNames = [];
 var itemJob = [];
 var itemHasJob = {};
 var jobSortedNames = [];
@@ -52,6 +50,7 @@ const pauseOne = GetPauseCondition(PAUSECHANNEL_ONETASK);
 var manualWriteOrders = false;
 var manualReadOrders = false;
 var manualReadStocks = false;
+var generalFilter = ""
 var currendFuseInput;
 var previousSizeMode;
 var fuses = [];
@@ -64,20 +63,20 @@ var openedConditionsIndex;
 var lastFileAccess;
 var readingStocks = false;
 var readingJobs = false;
+var itemsTypesAndSubtypes = {};
 var inventoryDisplayedMaterials = [];
 var inventoryStaticHeader;
 var inventoryStaticHeaderCorner;
+var pleaseWait;
 var oldStocks;
 var stocks = [];
 var tempStocks = [];
-var stocksMaterials = [];
 var jobs = null;
 var tempJobs = [];
 var gm = {};
-var sortedItemsAllIds = [];
+var qqq;
+var itemsHumanNamesToItem = {}
 var sortedItemSubTypesIds = [];
-var sortedItemTypesIds = [];
-var sortedItemsAndTypesNames = [];
 var sortedJobTypes = [];
 var itemTypesMembers = {};
 var stockCellsLabels = {}
@@ -85,10 +84,11 @@ var stockCellsHeaders = {}
 var stockMatCols = {}
 var stockCells = {}
 
-var sideA;
-var sideB;
+var materials = []
+var stocksMaterials = []
+var jobsMaterials = []
 
-var materialGroups = [
+var materialsGroups = [
     "ALL",
     "STONE",
     "METAL",
@@ -101,6 +101,9 @@ var materialGroups = [
     "BONE",
     "OTHER",
 ]
+
+var sideA;
+var sideB;
 
 var cl = console.log
 
@@ -118,7 +121,7 @@ document.addEventListener("mouseover", function (e) {
 async function InitDOM() {
     fileHandle = await window.api.GetFileHandle();
 
-    SetTab("orders");
+    SetTab("inventory");
     sideA = $(".inventoryBody .itemsSide")[0];
     sideB = $(".inventoryBody .valuesSide")[0];
     inventoryStaticHeader = $(".inventoryTableHeader")[0];
@@ -141,6 +144,9 @@ async function InitDOM() {
 }
 
 async function InitData() {
+
+    pleaseWait = true;
+    $(".pleaseWait")[0].classList.remove("hidden");
 
     Toast("Initializing...");
     await GetConfig();
@@ -173,8 +179,8 @@ async function InitData() {
 
     await QueueOrdersRead(true);
     await QueueStocksRead(true);
+    RefreshStocksFilter()
     await DataAutoUpdater();
-    Toast("<b>Ready</b>");
 }
 
 function QueueOrdersRead(immediate = false, manual = false) {
@@ -242,18 +248,14 @@ function ResetApp() {
     oldStocks = {};
     stocks = [];
     tempStocks = [];
-    stocksMaterials = [];
     jobs = null;
     tempJobs = [];
     gm = {};
-    sortedItemsAllIds = [];
     sortedItemSubTypesIds = [];
-    sortedItemTypesIds = [];
-    sortedItemsAndTypesNames = [];
     sortedJobTypes = [];
     itemTypesMembers = {};
 
-    $(".ordersTable")[0].innerHTML = "";
+    $(".ordersTable")[0].innerHTML = $(".ordersTable .help")[0].outerHTML;
 
     ClearStockTable();
     InitData();
@@ -270,7 +272,6 @@ function ClearStockTable() {
     $(".inventoryTableHeader")[0].innerHTML = "";
     $(".inventoryBody .itemsSide")[0].innerHTML = "";
     $(".inventoryBody .valuesSide")[0].innerHTML = "";
-    $(".materialsList.hozScroll")[0].innerHTML = "";
 }
 
 async function TryReadWriteOrders(immediate = false) {
@@ -391,7 +392,7 @@ async function GetGameStatus() {
     }
 
     if (status != "") {
-        PopInfo("Game not ready", status + "<br><br> Please load a fortress and try again.", "", [], null, "GetGameStatus");
+        PopInfo("Game not ready", status + "<br><br> Waiting for a fortress to be loaded...", "", [], null, "GetGameStatus");
         return false;
     }
 
@@ -409,21 +410,30 @@ async function GetGameInfos() {
     sortedItemSubTypesIds = Object.keys(gm.items);
     sortedItemSubTypesIds.sort((a, b) => { return a.localeCompare(b); });
 
-    sortedItemTypesIds = Object.values(gm.item_types);
-    sortedItemTypesIds.sort((a, b) => { return a.localeCompare(b); });
-
     var itemNames = Object.keys(gm.items).map(key => gm.items[key].name);
     itemNames = [...new Set(itemNames)];
 
-    sortedItemsAndTypesNames = sortedItemTypesIds.map(name => name.toLowerCase()).concat(itemNames);
-    sortedItemsAndTypesNames.sort((a, b) => { return a.localeCompare(b); });
+    itemsTypesAndSubtypes = Object.values(gm.items).map(item => item.typeName);
+    itemsTypesAndSubtypes.push(...Object.values(gm.items).map(item => item.subtypeName));
+    itemsTypesAndSubtypes = [...new Set(itemsTypesAndSubtypes)];
 
-    sortedItemsAllIds = sortedItemSubTypesIds.concat(sortedItemTypesIds);
-    sortedItemsAllIds.sort((a, b) => { return a.localeCompare(b); });
-    sortedItemsAllIds = [...new Set(sortedItemsAllIds)];
+    Object.keys(gm.items).forEach((itemId) => {
+        var item = gm.items[itemId];
+        itemsHumanNamesToItem[item.name] = item;
+        if (item.name == "box") {
+            itemsHumanNamesToItem["crate"] = item;
+            itemsHumanNamesToItem["chest"] = item;
+            itemsHumanNamesToItem["coffer"] = item;
+        } else if (item.name == "gobelet") {
+            itemsHumanNamesToItem["mug"] = item;
+            itemsHumanNamesToItem["cup"] = item;
+        } else if (item.name == "pipe_section") {
+            itemsHumanNamesToItem["tube"] = item;
+        }
+    })
+
 
     gm["material_types"] = {}
-    materialNames = []
 
     gm.materials["GLASS_GREEN"] = { Types: ["GLASS"] };
     gm.materials["GLASS_CLEAR"] = { Types: ["GLASS"] };
@@ -444,7 +454,6 @@ async function GetGameInfos() {
             gm["material_types"][mt].push(mat)
         });
         gm.materials[mat] = matI;
-        materialNames.push(matI.name);
     });
 
     itemTypesRequiringSubtypes = []
@@ -455,6 +464,7 @@ async function GetGameInfos() {
         itemTypesMembers[group].push(item);
         itemTypesRequiringSubtypes.push(item.typeName);
     });
+    itemTypesRequiringSubtypes = [...new Set(itemTypesRequiringSubtypes)];
 
     Object.values(gm.item_types).forEach((itemType) => {
         gm.items[itemType] = {
@@ -524,7 +534,7 @@ async function ReadJobsBatch() {
 
     if (data.completed) {
         jobs = tempJobs;
-        CleanupJobsData();
+        FinalizeJobsData();
         return true;
     }
 
@@ -988,7 +998,7 @@ function UpdateConditionsContainer(order) {
     var addCondButton = container.querySelectorAll(".btnAddCondition");
     if (addCondButton.length == 0) {
         var button = document.createElement("button");
-        button.textContent = "+";
+        button.textContent = "Add";
         button.classList.add("btnAddCondition");
         button.addEventListener("mouseup", (e) => {
             e.stopPropagation();
@@ -1246,7 +1256,7 @@ function CloneOrdersNoDom(orders) {
         for (const k in orders) {
             if (k.endsWith("_cell") || k.endsWith("_element"))
                 continue;
-            if (k == "isNew" || k == "orderHovered")
+            if (k == "isNew" || k == "orderHovered" || k == "jobInfo" || k == "foundJob" || k == "edited")
                 continue;
             if (k == "max_workshops" && orders[k] === 0)
                 continue;
@@ -1384,13 +1394,6 @@ function MarkEdited(order) {
     }
 }
 
-
-function UpdateStockItemLine(itemName) {
-    CreateStockCell(itemName, "ALL");
-    config.selectedStocksMaterialsCols.forEach(matName => {
-        CreateStockCell(itemName, matName);
-    });
-}
 
 function GetOrderFromElement(element) {
     var id = element.closest(".orderRow")?.getAttribute("orderId");;
@@ -1530,18 +1533,63 @@ function FilterChanged(search) {
         return;
     }
     search = search.toLowerCase();
-    FilterJobs(search);
-    UpdateInventoryItemFilter(search);
+    generalFilter = search;
+
+    if (search != '') {
+        if (!forceAllItemsVisible) {
+            forceAllItemsVisible = true;
+            $("body")[0].classList.add("forceShowAllItems");
+            ToggleMissingItems();
+        }
+    } else {
+        if (forceAllItemsVisible) {
+            forceAllItemsVisible = false;
+            $("body")[0].classList.remove("forceShowAllItems");
+            ToggleMissingItems();
+        }
+    }
+
+    FilterJobs();
+    FilterItems();
     lastFilterChange = Date.now();
 }
 
 
-function FilterJobs(searchTerm) {
+function FilterItems() {
+    search = generalFilter;
+    var itemCells = $(".inventoryBody .cell[item]");
+
+    itemCells.forEach(cell => {
+        if (!search) {
+            cell.classList.remove("hidden");
+        } else {
+            cell.classList.add("hidden");
+        }
+    });
+
+
+    var terms = search.split(" ");
+    terms = terms.map(t => t.trim().toUpperCase());
+    terms.forEach(term => {
+        if (!term)
+            return;
+        itemCells.forEach(cell => {
+            var itemName = cell.getAttribute("item").toUpperCase();
+            if (itemName.indexOf(term) > -1) {
+                cell.classList.remove("hidden");
+            }
+        });
+    });
+}
+
+
+function FilterJobs() {
+    search = generalFilter;
     var orderLines = ordersTable.querySelectorAll(".orderRow");
     orderLines.forEach(line => {
         var jobCell = line.querySelector(".property.job");
         var jobName = jobCell ? jobCell.textContent.toLowerCase() : "";
-        if (jobName.includes(searchTerm)) {
+        if (jobName.includes(search)) {
             line.classList.remove("hidden");
         } else {
             line.classList.add("hidden");
@@ -1556,9 +1604,11 @@ function SetAutoFill(input, sourceData, allowMultiples) {
     multiFill = allowMultiples;
     autoFillSource[input.getAttribute("id")] = sourceData;
     fuses[input.getAttribute("id")] = new Fuse(sourceData);
-    currendFuseInput = input;
+
     if (currendFuseInput != null)
         currendFuseInput.removeEventListener("input", AutoFillFieldChanged);
+
+    currendFuseInput = input;
     currendFuseInput.addEventListener("input", AutoFillFieldChanged);
 }
 
@@ -1575,7 +1625,7 @@ function AutoFillFieldChanged(event) {
         line.classList.add("autocompleteItem");
         line.textContent = result.item;
         list.appendChild(line);
-        line.addEventListener("mouseup", (e) => {
+        line.addEventListener("mousedown", (e) => {
             e.stopPropagation();
             if (e.button != 0)
                 return;
@@ -2070,6 +2120,11 @@ function GetJobConditions(job, qttDesired) {
                     if (item.material)
                         condition["material"] = item.material;
 
+                    if (item.container_capacity > 0) {
+                        condition.flags ??= [];
+                        condition.flags.push("empty");
+                    }
+
                     return;
                 }
             });
@@ -2097,7 +2152,7 @@ function FindActiveOrdersForJob(job) {
         if (order.job != job.jobTypeName)
             return false;
 
-        if ((order.item_subtype ?? '') != (job.item_typeName ?? ''))
+        if (job.item_subtype > -1 && (order.item_subtype ?? '') != (job.item_subtype ?? ''))
             return false;
 
         if (order.material_category != null && order.material_category.length > 0) {
@@ -2105,7 +2160,7 @@ function FindActiveOrdersForJob(job) {
                 return false;
         }
 
-        if (order.material != job.material && job.material != '')
+        if (order.material != null && order.material != job.material)
             return false;
 
         return true;
@@ -2207,7 +2262,7 @@ function ItemNameWithoutPrefix(itemName) {
     return itemName;
 }
 
-function CleanupJobsData() {
+function FinalizeJobsData() {
 
     sortedJobTypes = [];
     Object.values(gm.job_type).forEach(jobType => {
@@ -2217,11 +2272,15 @@ function CleanupJobsData() {
 
     itemJob = []
     jobSortedNames = []
+    jobsMaterials = [...materialsGroups];
     var i = 0;
     jobs.forEach(job => {
         CompleteJobInfos(job);
 
         jobSortedNames.push(job.name);
+
+        var mat = GetJobMaterial(job);
+        RegisterRawMaterial(mat, "job");
 
         job.index = i;
         i++;
@@ -2286,10 +2345,14 @@ async function ReadStocksBatch() {
 
     if (data.completed) {
         Trace("Reading stocks: completed.");
-        FinalizeStocks();
-        if (!emptyCellsCreated)
-            CreateEmptyStocksCells();
-        await pause(1000);
+
+        if (pleaseWait) {
+            pleaseWait = false;
+            Toast("<b>Ready</b>");
+            $(".pleaseWait")[0].classList.add("hidden");
+        }
+        FinalizeStocksData();
+        FillStocksTable();
         return true;
     }
 
@@ -2299,13 +2362,11 @@ async function ReadStocksBatch() {
 function ResetStocksDisplay() {
     emptyCellsCreated = false;
     ClearStockTable();
-    CreateEmptyStocksCells();
 }
 
-function FinalizeStocks() {
-    stocksMaterials = [];
+function FinalizeStocksData() {
     stockArray = []
-    stocks = {};
+    stocksMaterials = [...materialsGroups];
 
     for (const item in tempStocks)
         stockArray.push({ item: item, mats: tempStocks[item] });
@@ -2314,6 +2375,7 @@ function FinalizeStocks() {
         return ItemNameWithoutPrefix(a.item).localeCompare(ItemNameWithoutPrefix(b.item));
     });
 
+    stocks = {};
     stockArray.forEach(obj => {
         ProcessStockLine(obj.item, obj.mats);
     });
@@ -2325,46 +2387,14 @@ function FinalizeStocks() {
     if (oldStocks == null)
         oldStocks = {};
 
-    stocksMaterials.forEach(mat => {
-        if (materialGroups.indexOf(mat) != -1)
-            return;
-
-        if (!gm.materials[mat] || gm.materials[mat].Types == null || gm.materials[mat].Types.length == 0) {
-            gm.materials[mat] ??= {};
-            gm.materials[mat]["Types"] ??= [];
-
-            if (mat.endsWith(":WOOD")) {
-                gm.materials[mat].Types.push("WOOD");
-            } else if (mat.endsWith(":BONE")) {
-                gm.materials[mat].Types.push("BONE");
-            } else if (mat.endsWith(":LEATHER")) {
-                gm.materials[mat].Types.push("LEATHER");
-            } else if (mat.startsWith("GLASS")) {
-                gm.materials[mat].Types.push("GLASS");
-            } else if (mat.startsWith("COAL:")) {
-                gm.materials[mat].Types.push("COAL");
-            } else if (mat.endsWith(":DRINK")) {
-                gm.materials[mat].Types.push("DRINK");
-            } else if (Object.keys(gm.materials[mat].Types).length == 0) {
-                if (materialGroups.indexOf(mat) == -1)
-                    gm.materials[mat].Types.push("OTHER");
-            }
-        }
-    });
-
-    materialGroups.forEach(group => {
-        if (!stocksMaterials.includes(group))
-            stocksMaterials.push(group);
-    });
-
     //count regrouped materials qtt for each item (-> 12 Metal Axes, -> 8 Wooden Door)
     Object.keys(stocks).forEach(item => {
-        materialGroups.forEach(group => {
+        materialsGroups.forEach(group => {
             stocks[item][group] = 0;
         });
 
         Object.keys(stocks[item]).forEach(itemMat => {
-            if (materialGroups.indexOf(itemMat) != -1)
+            if (materialsGroups.indexOf(itemMat) != -1)
                 return;
 
             var itemMaterialGroups = GetMaterialTypes(itemMat);
@@ -2378,11 +2408,9 @@ function FinalizeStocks() {
     });
 
 
-
-    //manages cells flashing on stock changes
-
     var pool = GetStockPool();
 
+    //manages cells flashing on stock changes
     pool.forEach(stockItemName => {
         if (!stockItemName)
             return;
@@ -2393,8 +2421,9 @@ function FinalizeStocks() {
 
         var stock = stocks[stockItemName] ?? [];
 
-        if (stock.length > 0) {
-            Object.keys(stock).forEach(mat => {
+        var stockKeys = Object.keys(stock)
+        if (stockKeys.length > 0) {
+            stockKeys.forEach(mat => {
                 if (oldStocks[stockItemName][mat] == null)
                     oldStocks[stockItemName][mat] = 0;
 
@@ -2408,26 +2437,19 @@ function FinalizeStocks() {
                 if (mat == "STONE")
                     mat = "INORGANIC"
             });
-        } else {
-            CreateStockCell(stockItemName, "");
         }
     });
 
-    ApplyInventoryMaterialFilters()
 }
 
 function ProcessStockLine(item, matsQtts) {
 
-    var newInfo = false;
-
-    if (!stocks[item]) {
+    if (!stocks[item])
         stocks[item] = {}
-        newInfo = true;
-    }
 
     Object.keys(matsQtts).forEach(mat => {
 
-        qtt = matsQtts[mat];
+        RegisterRawMaterial(mat, "stock");
 
         if (!stocks[item][mat])
             stocks[item][mat] = 0;
@@ -2436,54 +2458,45 @@ function ProcessStockLine(item, matsQtts) {
             stocks[item]["ALL"] = 0;
 
         let cmat = CraftableMaterialName(mat);
-        if (mat != "" && stocksMaterials.indexOf(cmat) == -1)
-            stocksMaterials.push(cmat);
 
         stock = stocks[item];
+        qtt = matsQtts[mat];
         stock[cmat] = qtt;
         stock["ALL"] += qtt;
+
     });
 }
 
-function CreateEmptyStocksCells() {
-    var disp = $(".inventoryTable")[0].style.display
+
+function FillStocksTable() {
+
     $(".inventoryTable")[0].style.display = "none"
 
-    var pool = GetStockPool(true);
-    var validMaterials = stocksMaterials.filter(mat => config.selectedStocksMaterialsCols.indexOf(mat) != -1);
+    var itemsPool = GetStockPool();
+    itemsPool.forEach(stockItemName => {
+        UpdateStockItemLine(stockItemName);
+    })
 
-    pool.forEach(poolEntry => {
-        validMaterials.forEach(mat => { CreateStockCell(poolEntry, mat); });
-    });
+    $(".inventoryTable")[0].style.display = "flex"
 
-    $(".inventoryTable")[0].style.display = disp
-    emptyCellsCreated = true;
+    ApplyInventoryMaterialFilters();
+    UpdateFavoriteItemsButtons();
 }
 
-function GetStockPool(forceIncludeBuildables = false) {
-    if (config.toggleHideMissingItems || forceIncludeBuildables) {
-        let pool = [];
-        Object.values(gm.items).forEach(item => {
-            if (itemTypesRequiringSubtypes.indexOf(item.typeName) != -1 && !item.subtypeName)
-                return;
+function UpdateStockItemLine(itemName) {
+    CreateStockCell(itemName, "ALL");
 
-            var key = (item.isTypeOnly ? item.typeName : NoS(item.typeName) + "!" + item.subtypeName).toUpperCase();
-            if (itemHasJob[key] != true && (!stocks[key] || stocks[key]["ALL"] == 0)) {
-                return;
-            }
-
-            var key = item.isTypeOnly ? item.typeName : NoS(item.typeName) + "!" + item.subtypeName;
-            pool.push(key.toUpperCase());
-        });
-        return pool;
-    } else {
-        return Object.keys(stocks)
-    }
+    var mats = config.selectedStocksMaterialsCols;
+    mats.forEach(matName => {
+        CreateStockCell(itemName, matName);
+    });
 }
 
 
 function CreateStockCell(stockEntry, material) {
     if (material == "")
+        return;
+    if (stockEntry == "")
         return;
 
     var totalStockWant = (stocks[stockEntry]?.["ALL"] > 0 ? 1 : 0) + GetWantedProduction(stockEntry, "ALL");
@@ -2498,7 +2511,7 @@ function CreateStockCell(stockEntry, material) {
     if (!myLabel) {
         myLabel = document.createElement("div");
         myLabel.classList.add("cell", "itemType", "gameButton");
-        myLabel.innerHTML = StockEntryLabelGroup(stockEntry);
+        myLabel.innerHTML = "<fav onclick='ToggleFavoriteItem(\"" + stockEntry + "\")'>★</fav>" + StockEntryLabelGroup(stockEntry);
         myLabel.setAttribute("item", stockEntry.toUpperCase());
 
         /*
@@ -2527,7 +2540,7 @@ function CreateStockCell(stockEntry, material) {
         header.classList.add("cell", "header", "gameButtonL", "inventoryCol");
         header.setAttribute("material", material);
 
-        if (materialGroups.indexOf(material) != -1)
+        if (materialsGroups.indexOf(material) != -1)
             header.setAttribute("mainCat", 1);
 
         header.innerHTML = "<div title=\"" + DisplayableMaterialName(material, 2) + "\">" + DisplayableMaterialName(material, 1) + "</div>";
@@ -2542,7 +2555,7 @@ function CreateStockCell(stockEntry, material) {
     //mat col
     if (!myMatCol) {
         myMatCol = document.createElement("div");
-        myMatCol.classList.add("inventoryCol", "inventoryCol");
+        myMatCol.classList.add("inventoryCol");
         myMatCol.setAttribute("material", material);
         sideB.appendChild(myMatCol);
         stockMatCols[material] = myMatCol;
@@ -2558,7 +2571,7 @@ function CreateStockCell(stockEntry, material) {
         stockDiv.classList.add("stock");
         stockDiv.title = "Current stock quantity";
 
-        var key = stockEntry + "/" + material;
+        var key = stockEntry + "/" + (material == "STONE" ? "INORGANIC" : material);
 
         if (!itemJob[key]) {
             //cl("Missing job for " + key);
@@ -2569,6 +2582,8 @@ function CreateStockCell(stockEntry, material) {
             matCell.classList.toggle("hasJob", true);
             matCell.setAttribute("jobId", itemJob[key] != null ? itemJob[key].index : "")
             AddInventoryCellInput(matCell, stockEntry, material, ChangeWantedProduction);
+            myMatCol.classList.add("colHasJob");
+            $(".cell.inventoryCol.header[material='" + material + "']")[0].classList.add("colHasJob");
         }
 
         matCell.appendChild(stockDiv);
@@ -2629,14 +2644,16 @@ function StockCellChanged(itemName, matName, diff) {
         const c = cell;
         c.classList.remove("popUp");
         c.classList.remove("popDown");
-    }, 500);
+    }, 100);
 }
 
 
 
 function CloseMaterialsPicker() {
     $(".inventoryMaterialsPickerHost ")[0].classList.add("hidden");
+    UpdateInventoryMaterialsPicker();
     ApplyInventoryMaterialFilters()
+    RefreshStocksFilter();
 }
 
 function OpenMaterialsPicker() {
@@ -2650,8 +2667,11 @@ function OpenMaterialsPicker() {
 function UpdateInventoryMaterialsPicker() {
     var pickerList = $(".inventoryMaterialsPicker .materialsList")[0];
 
-    stocksMaterials.forEach(mat => {
-        var option = pickerList.querySelector(`button.materialOption[material='${mat}']`);
+    var materialOptions = GetDisplaybaleMaterialsPool();
+
+    materialOptions.forEach(mat => {
+        mat = mat.replace(/'/g, "").replace(/ /g, "_");
+        var option = pickerList.querySelector("button.materialOption[material='" + mat + "']");
         if (!option) {
             option = document.createElement("button");
             option.classList.add("materialOption", "gameButton");
@@ -2670,13 +2690,13 @@ function UpdateInventoryMaterialsPicker() {
 
             option.appendChild(labelPreDiv);
 
-            var mainCat = materialGroups.indexOf(mat);
+            var mainCat = materialsGroups.indexOf(mat);
             option.setAttribute("maincat", mainCat);
 
             var types = GetMaterialTypes(mat);
             var order = 10000;
             types.forEach(matGroup => {
-                var matGroup = materialGroups.indexOf(matGroup);
+                var matGroup = materialsGroups.indexOf(matGroup);
                 if (matGroup > -1 && matGroup < order)
                     order = matGroup;
             });
@@ -2697,7 +2717,7 @@ function UpdateInventoryMaterialsPicker() {
 
     allOptions.forEach(option => {
         var mat = option.getAttribute("material");
-        if (stocksMaterials.indexOf(mat) == -1) {
+        if (materialOptions.indexOf(mat) == -1) {
             //remove option
             option.remove();
             return;
@@ -2767,9 +2787,8 @@ function ApplyInventoryMaterialFilters() {
 
         cell.style.order = config.selectedStocksMaterialsCols.indexOf(mat);
     });
-    ResetStocksDisplay()
+    FilterItems();
     SortStockCells();
-    UpdateInventoryItemFilter(lastInventoryFilter ?? '');
 }
 
 function SortStockCells() {
@@ -2786,11 +2805,17 @@ function SortStockCells() {
         var itemIndex = 0;
         var itemName = cell.getAttribute("item");
         var noHtml = cell.innerHTML.split("</b>").last();
+
         if (config.toggleStockSorting) {
             itemIndex = cellsHtmls.findIndex(obj => obj == cell.innerHTML)
         } else {
             itemIndex = cellsTexts.findIndex(obj => obj == noHtml)
         }
+
+        var item = cell.getAttribute("item");
+        if (config.favoriteStockItems.indexOf(item) != -1)
+            itemIndex -= 10000;
+
         cell.style.order = itemIndex;
         ordering[itemName] = itemIndex;
     });
@@ -2850,7 +2875,7 @@ function DisplayableMaterialName(mat, tagMode = 0) {
 
     matString = matString.replace("ALL", "TOTAL");
 
-    if (materialGroups.indexOf(mat) == -1) {
+    if (materialsGroups.indexOf(mat) == -1) {
         var matInfo = gm.materials[mat];
         if (!matInfo) {
             cl("missing material info for " + mat);
@@ -2974,30 +2999,6 @@ function SortInventoryMaterialPicker() {
     });
 }
 
-function UpdateInventoryItemFilter(search) {
-    if (search != '') {
-        if (config.toggleHideMissingItems && !forceAllItemsVisible) {
-            forceAllItemsVisible = true;
-            ToggleOption('hideMissingItems');
-        }
-    } else {
-        if (forceAllItemsVisible) {
-            forceAllItemsVisible = false;
-            ToggleOption('hideMissingItems');
-        }
-    }
-
-    lastInventoryFilter = search;
-    var itemCells = $(".inventoryBody .cell[item]");
-    itemCells.forEach(cell => {
-        var itemName = cell.getAttribute("item").toLowerCase();
-        if (!search || search == '' || itemName.includes(search.toLowerCase())) {
-            cell.classList.remove("hidden");
-        } else {
-            cell.classList.add("hidden");
-        }
-    });
-}
 
 function EditOrder(order) {
     if (!order)
@@ -3031,26 +3032,37 @@ function OrderEdited(tag) {
                 $(".orderEditor #jobName")[0].classList.remove("error");
                 editedOrder.jobInfo = job;
                 editedOrder.job = job.jobTypeName;
+
+                cl(job);
+
                 var code = "10\n";
-                if (job.io?.in?.length > 0) {
-                    job.io.in.forEach(input => {
-                        if (input.flags) {
-                            input.flags.forEach(flag => {
-                                code += ":" + flag + " ";
-                            });
-                        }
-                        var item = input.item;
-                        if (item.material || (item.material_category && item.material_category.length > 0))
-                            code += "!" + (item.material ?? item.material_category[0]) + " ";
 
-                        if (item.subtypeName) {
-                            code += item.subtypeName + " ";
-                        } else if (item.typeName) {
-                            code += item.typeName + " ";
-                        }
+                if (job.io?.out?.length > 0) {
+                    let item = job.io.out[0].item;
+                    if (item && item.container_capacity > 0)
+                        code = ":empty " + item.name + " " + code;
+                }
 
-                        code += ">10\n"
-                    });
+                if (job.name.endsWith(" meal")) {
+                    code = ":unrotten FOOD <100\n"
+                    code += ":unrotten :cookable >" + GetOrderBatchSize() + "\n"
+                } else {
+                    if (job.io?.in?.length > 0) {
+                        job.io.in.forEach(input => {
+                            if (input.flags) {
+                                input.flags.forEach(flag => {
+                                    code += ":" + flag + " ";
+                                });
+                            }
+                            var item = input.item;
+                            if (item) {
+                                if (item.material || (item.material_category && item.material_category.length > 0))
+                                    code += "!" + (item.material ?? item.material_category[0]) + " ";
+
+                                code += GetItemSubtypeOrType(item) + " >" + GetOrderBatchSize() + "\n"
+                            }
+                        });
+                    }
                 }
 
                 if (job.material != "")
@@ -3084,8 +3096,7 @@ function OrderEdited(tag) {
             editedOrder.item_conditions = []
             job = editedOrder.jobInfo;
 
-            fuseItemsTypes = new Fuse(sortedItemTypesIds);
-            fuseItemsSubTypes = new Fuse(sortedItemSubTypesIds);
+            fuseItemNames = new Fuse(Object.keys(itemsHumanNamesToItem));
             fuseMats = new Fuse(Object.keys(gm.materials));
             fuseFlags = new Fuse(gm.itemFlags);
 
@@ -3098,9 +3109,8 @@ function OrderEdited(tag) {
                 var value = parseInt(line.trim());
                 var flags = [];
                 var operator = "";
-                let textOperator = "";
-                var itemTypeProduced = "";
-                var itemSubTypeProduced = "";
+                let scriptOperator = "";
+                var itemSelected = null;
 
 
                 if (line.trim() == value.toString()) {
@@ -3110,14 +3120,12 @@ function OrderEdited(tag) {
                     codeLine = ""
                     basicLineDone = true;
 
-                    var producedType = job.io?.out[0]?.item_typeName ?? job.io?.out[0]?.item?.typeName;
+                    var itemSelected = job.io?.out[0].item;
                     $(".orderEditor #itemQtt")[0].value = Math.min(GetOrderBatchSize(), value)
 
-                    if (producedType != "" && producedType != null) {
-                        textOperator = "LessThan";
-                        itemTypeProduced = producedType;
-                        itemSubTypeProduced = job.io?.out[0]?.item_subtypeName ?? job.io?.out[0]?.item?.subtypeName;
-                        codeLine = "Stocks of <b>" + (itemSubTypeProduced ? ItemNameWithoutPrefix(itemSubTypeProduced) : producedType) + "</b> < <b>" + value + "</b>"
+                    if (itemSelected != null) {
+                        scriptOperator = "LessThan";
+                        codeLine = "Stocks of <b>" + itemSelected.name + "</b> < <b>" + value + "</b>"
                     } else {
                         codeLine = "<u>[Job's produced item not found]</u>";
                     }
@@ -3128,11 +3136,6 @@ function OrderEdited(tag) {
                     if (line.includes("!"))
                         mat = line.split("!")[1].split(" ")[0].trim();
                     line = line.replace("!" + mat, "");
-
-                    var itemSubTypeProduced = "";
-                    if (line.includes("."))
-                        itemSubTypeProduced = line.split(".")[1].split(" ")[0].trim();
-                    line = line.replace("." + itemSubTypeProduced, "");
 
                     while (line.includes(":")) {
                         var flag = line.split(":")[1].split(" ")[0].trim();
@@ -3181,22 +3184,24 @@ function OrderEdited(tag) {
                         flags[i] = fuseFlag ? fuseFlag.item : "?" + flags[i] + "?";
                     };
 
-                    var itemTypeProduced = line.trim();
-                    if (itemTypeProduced == "") {
-                        itemTypeProduced = "items"
+                    var nameTyped = line.trim();
+                    var itemSelected = null;
+
+                    if (nameTyped == "") {
+                        nameTyped = "items"
                     } else {
-                        var fuseItem = fuseItemsTypes.search(itemTypeProduced, { limit: 1 })[0];
-                        itemTypeProduced = fuseItem ? fuseItem.item : "?" + itemTypeProduced + "?";
+
+                        itemSelected = FindItemByName(nameTyped);
+                        if (!itemSelected) {
+                            var itemItemName = fuseItemNames.search(nameTyped, { limit: 1 })?.[0].item;
+                            if (itemItemName)
+                                itemSelected = itemsHumanNamesToItem[itemItemName];
+                        }
                     }
 
                     if (mat != "") {
                         var fuseMat = fuseMats.search(mat, { limit: 1 })[0];
                         mat = fuseMat ? fuseMat.item : "?" + mat + "?";
-                    }
-
-                    if (itemSubTypeProduced != "") {
-                        var fuseSub = fuseItemsSubTypes.search(itemSubTypeProduced, { limit: 1 })[0];
-                        itemSubTypeProduced = fuseSub ? fuseSub.item : "?" + itemSubTypeProduced + "?";
                     }
 
                     codeLine = ""
@@ -3229,54 +3234,64 @@ function OrderEdited(tag) {
                             codeLine += "(" + tmat + ")";
                         }
                     }
+
                     if (codeLine != "")
                         codeLine += " ";
 
-                    if (itemTypeProduced == "" || itemTypeProduced == undefined)
-                        itemTypeProduced = "items";
-
-                    if (itemSubTypeProduced == "" || itemSubTypeProduced == undefined)
-                        itemSubTypeProduced = "";
-
-                    var tItem = itemTypeProduced;
-                    if (itemTypeProduced[0] == "?") {
-                        tItem = "<u>" + itemTypeProduced.replace("?", "") + "</u> ";
+                    if (nameTyped == "items") {
+                        codeLine += "<b>items</b>";
                     } else {
-                        tItem = "<b>" + itemTypeProduced + "</b> ";
+                        if (!itemSelected) {
+                            codeLine += "<u>?" + nameTyped + "?</u> ";
+                        } else {
+                            codeLine += "<b>" + itemSelected.name + "</b> ";
+                        }
                     }
-
-                    var tItemSub = itemSubTypeProduced;
-                    if (itemSubTypeProduced[0] == "?") {
-                        tItemSub = "<u>" + itemSubTypeProduced.replace("?", "") + "</u> ";
-                    } else {
-                        tItemSub = "<b>" + itemSubTypeProduced + "</b> ";
-                    }
-
-                    codeLine += tItem + tItemSub + operator + " " + (value >= 0 ? "<b>" + value + "</b>" : "<u>[invalid value]</u>") + "\n";
 
                     if (operator == "~=")
                         operator = "!="
 
-                    textOperator = Object.values(condOperators).find(cnd => { return cnd.symbol == operator }).name ?? "??";
+                    if (codeLine != "")
+                        codeLine += " ";
+
+                    codeLine += operator + " " + (value >= 0 ? "<b>" + value + "</b>" : "<u>[invalid value]</u>") + "\n";
+
+                    scriptOperator = Object.values(condOperators).find(cnd => { return cnd.symbol == operator }).name ?? "??";
                 }
 
                 let condition = {
-                    "condition": textOperator,
+                    "condition": scriptOperator,
                     "value": value,
                 }
+
                 if (mat != "")
                     condition["material"] = mat;
-                if (itemTypeProduced != "items")
-                    condition["item_type"] = NoS(itemTypeProduced.toUpperCase());
-                if (itemSubTypeProduced != "items")
-                    condition["item_subtype"] = itemSubTypeProduced.toUpperCase();
+
+                if (itemSelected) {
+                    if (itemSelected.typeName)
+                        condition["item_type"] = NoS(itemSelected.typeName.toUpperCase());
+
+                    if (itemSelected.subtypeName)
+                        condition["item_subtype"] = itemSelected.subtypeName.toUpperCase();
+                }
+
                 if (flags.length > 0) {
                     condition["flags"] = flags;
                 }
 
                 inter.innerHTML += codeLine + "<br/>";
-                if (value >= 0 && condition.item_type != null)
+                if (value >= 0 && (condition.item_type != null || flags.length > 0))
                     editedOrder.item_conditions.push(condition);
+
+                if (job.name.endsWith(" meal")) {
+                    if (job.name.indexOf("lavish") != -1) {
+                        editedOrder.meal_ingredients = 4;
+                    } else if (job.name.indexOf("fine") != -1) {
+                        editedOrder.meal_ingredients = 3;
+                    } else {
+                        editedOrder.meal_ingredients = 2;
+                    }
+                }
             });
 
             out.textContent = JSON.stringify(editedOrder.item_conditions, null, 2);
@@ -3303,7 +3318,7 @@ function GetWantedProduction(item, mat) {
     if (myOrders.length == 0)
         return 0;
 
-    cl("Wanted production for " + item + " / " + mat + " is " + myOrders[0].amount_total);
+    //cl("Wanted production for " + item + " / " + mat + " is " + myOrders[0].amount_total);
 
     var outItem = job.io?.out?.[0];
     if (outItem) {
@@ -3338,7 +3353,9 @@ function OnGeneralKeyDown(e) {
     if (e.key == "Control")
         wasCtrlPressed = true;
 
-    if (e.key == "a" && wasCtrlPressed)
+    var inputActive = document.activeElement && document.activeElement.tagName === "INPUT" || document.activeElement.tagName === "TEXTAREA";
+
+    if (e.key == "a" && wasCtrlPressed && !inputActive)
         e.preventDefault();
 
     if (IsCtrlPressed() || IsShiftPressed())
@@ -3358,19 +3375,19 @@ function OnGeneralKeyDown(e) {
         return;
     if ($(".orderEditor:not(.hidden)")[0])
         return;
-    if (document.activeElement && document.activeElement.tagName === "INPUT" || document.activeElement.tagName === "TEXTAREA")
-        return;
 
     if (!IsCtrlPressed()) {
-        var searchers = $("input.autofocus");
-        //convert searchers to array
-        searchers = Array.from(searchers);
+        var autoFocusables = $("input.autofocus");
+        autoFocusables = Array.from(autoFocusables);
+
         //filter out element with offsetParent null (not visible)
-        searchers = searchers.filter(s => s.offsetParent !== null);
-        if (searchers.length > 0) {
-            searchers.sort(CompareDepth);
-            searchers[0].focus();
-            searchers[0].select();
+        autoFocusables = autoFocusables.filter(s => s.offsetParent !== null);
+        if (autoFocusables.length > 0) {
+            autoFocusables.sort(CompareDepth);
+            if (document.activeElement !== autoFocusables[0]) {
+                autoFocusables[0].focus();
+                autoFocusables[0].select();
+            }
         }
     }
 }
@@ -3399,22 +3416,17 @@ function OnGeneralKeyUp(e) {
     if ($(".orderEditor:not(.hidden)")[0]) {
         if (e.key == "Enter" && (IsShiftPressed() || IsCtrlPressed())) {
             e.preventDefault();
-            document.activeElement.blur();
+            $("#jobName")[0].blur();
             if (IsShiftPressed()) {
-                //quick order
-                delete editedOrder.item_conditions;
-                editedOrder.frequency = "OneTime";
-                //unfocus all elements
-                AddNewOrder(editedOrder);
+                SaveSimpleOrder();
             } else if (IsCtrlPressed()) {
-                editedOrder.frequency = "Daily";
-                AddNewOrder(editedOrder);
+                SaveDailyOrder();
             }
-            CloseOrderEditor();
         }
         KeyUpEnd(e);
         return;
     }
+
 
     if (IsCtrlPressed() || IsShiftPressed()) {
 
@@ -3433,7 +3445,8 @@ function OnGeneralKeyUp(e) {
 
         if (key == "e") {
             e.preventDefault();
-            ToggleOption("hideMissingItems");
+            if (!forceAllItemsVisible)
+                ToggleOption("hideMissingItems");
         }
 
         if (key == "r") {
@@ -3554,8 +3567,27 @@ function OnGeneralKeyUp(e) {
             ToggleOption('HideLogs')
         }
 
+        e.stopPropagation();
     }
     KeyUpEnd(e);
+}
+
+
+function SaveSimpleOrder() {
+    delete editedOrder.item_conditions;
+    editedOrder.frequency = "OneTime";
+    AddNewOrder(editedOrder);
+
+    document.activeElement.blur();
+    CloseOrderEditor();
+}
+
+function SaveDailyOrder() {
+    editedOrder.frequency = "Daily";
+    AddNewOrder(editedOrder);
+
+    document.activeElement.blur();
+    CloseOrderEditor();
 }
 
 function KeyUpEnd(e) {
@@ -3824,6 +3856,10 @@ function CompleteJobInfos(job) {
     GuessJobItemAssociation(job);
 }
 
+function GetJobMaterial(job) {
+    return job.material || job.material_category?.[0] || job.io?.in?.[0]?.material || "";
+}
+
 function GuessJobItem(job) {
     var seekNameUp = GetMaterialNameFromIndex(job.mat_index);
     job.material = seekNameUp ? seekNameUp : "";
@@ -3846,6 +3882,8 @@ function GuessJobItem(job) {
                         "count": p.count ? p.count : 1
                     });
                     if (first && item) {
+                        if (item.subtypeName == "ITM_TOOL_STONE_AXE")
+                            cl("prout1");
                         job.item_typeName = item.subtypeName;
                         first = false;
                     }
@@ -3890,14 +3928,13 @@ function GuessJobItem(job) {
             quantity: 1,
         };
 
-        while (parts.length > 0) {
-            parts.shift(1)
+        while (parts.length > 0 && newOut.item == null) {
             var itm = parts.join(" ").toLowerCase();
+            if (itm == "")
+                continue;
 
-            if (sortedItemsAndTypesNames.includes(itm)) {
-                newOut.item = GetItemBySubtype(itm);
-                break;
-            }
+            newOut.item = FindItemBySubtype(itm) ?? FindItemByName(itm) ?? FindItem(itm);
+            parts.shift(1)
         }
 
         if (jn == "Weave thread into silk") {
@@ -3906,6 +3943,8 @@ function GuessJobItem(job) {
 
             newIn.item = gm.items["THREAD"];
             newIn.flags = ["collected", "silk"];
+        } else if (jn.indexOf(" mugs") > -1 || jn.indexOf(" cups") > -1 || jn.indexOf(" goblets") > -1) {
+            newOut.item = gm.items["GOBLET"];
         }
 
         if (newOut.item == null) {
@@ -4023,10 +4062,15 @@ function GuessJobItem(job) {
             if (jnl.endsWith(" waterskin"))
                 newOut.item = gm.items["FLASK"];
 
-            if (jnl.endsWith(" mug"))
+            if (jnl.endsWith(" mug") || jnl.endsWith(" mugs"))
                 newOut.item = gm.items["GOBLET"];
-            if (jnl.endsWith(" cup"))
+            if (jnl.endsWith(" cup") || jnl.endsWith(" cups"))
                 newOut.item = gm.items["GOBLET"];
+
+            if (jnl.endsWith(" vial") || jnl.endsWith(" vials"))
+                newOut.item = gm.items["FLASK"];
+            if (jnl.endsWith(" waterskin") || jnl.endsWith(" waterskins"))
+                newOut.item = gm.items["FLASK"];
 
             if (job.name.startsWith("Make wooden training")) {
                 var weapon = job.name.split(" ").last();
@@ -4132,6 +4176,7 @@ function GuessJobItem(job) {
                 } else if (job.name.includes(" rock ")) {
                     newIn.material = "INORGANIC";
                     newIn.item = gm.items["BOULDER"];
+                    newIn.flags = ["hard", "non_economic"];
 
                 } else if (job.name.includes(" leather")) {
                     newIn.item = gm.items['SKIN_TANNED'];
@@ -4157,8 +4202,26 @@ function GuessJobItem(job) {
                 break;
         }
 
+        var seekOutItem = true
+        if (job.name.startsWith("Collect ")
+            || job.name.startsWith("Cut ")
+            || job.name.startsWith("Decorate ")
+            || job.name.startsWith("Dye ")
+            || job.name.startsWith("Extract ")
+            || job.name.startsWith("Encrust ")
+            || job.name.startsWith("Mix ")
+            || job.name.startsWith("Polish ")
+            || job.name.startsWith("Sew ")
+            || job.name.startsWith("Stud ")) {
+            seekOutItem = false;
+        }
 
-        if (newOut.item == null) {
+
+        var removeS = false;
+        if (job.name.indexOf("pair of ") > -1 || job.name.indexOf(" three ") > -1)
+            removeS = true;
+
+        if (seekOutItem && newOut.item == null) {
             //try auto resolve
             var cutName = job.name.toLowerCase();
             if (gm.materials[newOut.material])
@@ -4170,15 +4233,33 @@ function GuessJobItem(job) {
             cutName = cutName.replace("forge", "")
             cutName = cutName.replace("cut", "")
             cutName = cutName.replace("assemble", "")
+            cutName = cutName.replace("pair of ", " ")
+            cutName = cutName.replace("three ", " ")
 
             //replace uppercase letters with _ + letter except first
             cutName = cutName[0].toLowerCase() + cutName.slice(1);
             cutName = cutName.replace(/([A-Z])/g, '_$1');
             cutName = cutName.toLocaleLowerCase().trim();
-            newOut.item = GetItemBySubtype(cutName.trim());
+
+            if (removeS && cutName.endsWith("s"))
+                cutName = cutName.slice(0, -1);
+
+            newOut.item = FindItemByName(cutName.trim());
+            var cuterName = cutName;
+            while (newOut.item == null && cuterName.includes(" ")) {
+                //remove first word
+                var parts = cuterName.split(" ");
+                parts.shift(1);
+                cuterName = parts.join(" ");
+                newOut.item = FindItemByName(cuterName.trim());
+            }
+
+            if (newOut.item == null) {
+                //cl("-- Could not auto-resolve output item for job #" + jobs.indexOf(job) + " '" + job.name + "' using '" + cutName + "'");
+            }
 
             if (newOut.item != null) {
-                //cl("Auto-resolved job #" + jobs.indexOf(job) + " '" + job.name + "' to item " + newOut.item.name + " using '" + cutName + "'");
+                //cl("+++ Auto-resolved job #" + jobs.indexOf(job) + " '" + job.name + "' to item " + newOut.item.name + " using '" + cutName + "'");
             }
         }
 
@@ -4203,7 +4284,7 @@ function GuessJobItem(job) {
                     job.material = matName;
                     break;
                 } else {
-                    if (materialGroups.indexOf(seekNameUp) >= 0) {
+                    if (materialsGroups.indexOf(seekNameUp) >= 0) {
                         job.material_category = [seekNameUp];
                     }
                     break;
@@ -4215,7 +4296,7 @@ function GuessJobItem(job) {
                     job.material_category = ["LEATHER"];
 
                 if (job.name.includes(" rock "))
-                    job.material_category = ["INORGANIC"];
+                    job.material = "INORGANIC";
 
                 if (job.name.includes(" bone "))
                     job.material_category = ["BONE"];
@@ -4252,8 +4333,12 @@ function GuessJobItem(job) {
             }
         }
 
-        if (newOut.item)
+        if (newOut.item) {
+            if (newOut.item.subtypeName == "ITM_TOOL_STONE_AXE")
+                cl("prout2");
+
             job.item_typeName = newOut.item.subtypeName;
+        }
 
         if (newIn.item != null || newIn.flags)
             job.io.in.push(newIn);
@@ -4316,7 +4401,7 @@ function GuessJobItemAssociation(job) {
             return;
         }
 
-        key = (item.isTypeOnly ? item.typeName : NoS(item.typeName) + "!" + item.subtypeName).toUpperCase();
+        key = (item.isTypeOnly ? item.typeName : item.typeName + "!" + item.subtypeName).toUpperCase();
         itemHasJob[key] = true;
         var fullKey = key + matKey;
         itemJob[fullKey] = job;
@@ -4357,6 +4442,7 @@ function GetOrderJobLabel(order) {
     if (!job)
         return "Unknown job! " + order.job
 
+    cl(order);
     if (config.toggleStockSorting) {
         let item = job?.io?.out?.[0]?.item;
 
@@ -4390,15 +4476,30 @@ function GetOrderJobLabel(order) {
 }
 
 
-
-function GetItemBySubtype(itemName) {
-    itemName = itemName.toLowerCase().trim();
-    return Object.values(gm.items).find(itm => itm.name == itemName);
+function FindItem(search) {
+    search = search.toLowerCase().trim();
+    var res = Object.entries(gm.items).find(([key, itm]) => { return key.includes(search) || itm.name.includes(search) || itm.typeName.includes(search) || itm.subtypeName.includes(search) })
+    return res ? res[1] : null;
 }
 
-function FindItemsBySubtype(search) {
+function FindItemByName(search) {
     search = search.toLowerCase().trim();
-    return Object.entries(gm.items).find(([key, itm]) => { return key.includes(search) || itm.name.includes(search) || itm.typeName.includes(search) || itm.subtypeName.includes(search) });
+    return Object.values(gm.items).find(itm => itm.name == search);
+}
+
+function FindItemsByType(search) {
+    search = search.toLowerCase().trim();
+    return Object.values(gm.items).filter(itm => itm.typeName == search);
+}
+
+function FindItemBySubtype(search) {
+    search = search.toUpperCase().trim();
+    return Object.values(gm.items).find(itm => itm.subtypeName == search);
+}
+
+function FindItems(search) {
+    search = search.toLowerCase().trim();
+    return Object.entries(gm.items).filter(([key, item]) => { return key.includes(search) || item.name.includes(search) || item.typeName.includes(search) || item.subtypeName.includes(search) });
 }
 
 function FindMaterialByName(materialName) {
@@ -4573,8 +4674,8 @@ function OrderToolDelete() {
 
 function ToggleGrouping() {
     ToggleOption('stockSorting');
-    SortStockCells();
     UpdateOrdersLabels()
+    SortStockCells();
 }
 
 function ConditionCoderFocused() {
@@ -4591,12 +4692,152 @@ function ConditionCoderFocused() {
 function JobItemName(job) {
     if (job.io.out.length == 0)
         return "";
-    var outItem = job.io.out[0];
-    if (!outItem.item)
+    var outItem = job.io.out[0]?.item;
+    if (!outItem)
         return "";
-    return outItem.item.typeName + (outItem.item.subtypeName ? "!" + outItem.item.subtypeName : "");
+    var typeName = outItem.typeName;
+    return (typeName + (outItem.subtypeName ? "!" + outItem.subtypeName : "")).toUpperCase();
 }
 
 function JobMaterialName(job) {
     return (job.material != "" ? job.material : (job.material_category != null && job.material_category.length > 0 ? job.material_category[0] : "ALL")).toUpperCase();
+}
+
+function RegisterRawMaterial(mat, domain) {
+    if (mat == null || mat == "")
+        return false;
+
+    mat = mat.toUpperCase();
+
+    if (materialsGroups.indexOf(mat) != -1)
+        return;
+
+    if (materials.indexOf(mat) != -1)
+        return;
+
+    gm.materials[mat] ??= {};
+    gm.materials[mat].Types ??= [];
+
+    if (mat.endsWith(":WOOD")) {
+        gm.materials[mat].Types.push("WOOD");
+    } else if (mat.endsWith(":BONE")) {
+        gm.materials[mat].Types.push("BONE");
+    } else if (mat.endsWith(":LEATHER")) {
+        gm.materials[mat].Types.push("LEATHER");
+    } else if (mat.startsWith("GLASS")) {
+        gm.materials[mat].Types.push("GLASS");
+    } else if (mat.startsWith("COAL:")) {
+        gm.materials[mat].Types.push("COAL");
+    } else if (mat.endsWith(":DRINK")) {
+        gm.materials[mat].Types.push("DRINK");
+    } else if (gm.materials[mat].Types.length == 0) {
+        if (materialsGroups.indexOf(mat) == -1)
+            gm.materials[mat].Types.push("OTHER");
+    }
+
+    gm.materials[mat].Types = [...new Set(gm.materials[mat].Types)];
+
+    switch (domain) {
+        case "stock":
+            if (!stocksMaterials.includes(mat))
+                stocksMaterials.push(mat);
+            break;
+
+        case "job":
+            if (!jobsMaterials.includes(mat))
+                jobsMaterials.push(mat);
+            break;
+    }
+
+}
+
+function GetStockPool() {
+    if (!config.toggleHideMissingItems || forceAllItemsVisible) {
+        let pool = [];
+        Object.values(gm.items).forEach(item => {
+            if (itemTypesRequiringSubtypes.indexOf(item.typeName) != -1 && !item.subtypeName)
+                return;
+
+            var key = (item.isTypeOnly ? item.typeName : item.typeName + "!" + item.subtypeName).toUpperCase();
+            if (itemHasJob[key] != true && (!stocks[key] || stocks[key]["ALL"] == 0)) {
+                //cl("no job for item " + key);
+                return;
+            }
+
+            var key = item.isTypeOnly ? item.typeName : item.typeName + "!" + item.subtypeName;
+            pool.push(key.toUpperCase());
+        });
+        return pool;
+    } else {
+        return Object.keys(stocks)
+    }
+}
+
+
+function GetDisplaybaleMaterialsPool() {
+    var mats = [...stocksMaterials];
+    if (!config.toggleHideMissingItems || forceAllItemsVisible)
+        mats.push(...jobsMaterials);
+
+    mats = Array.from(new Set(mats));
+
+    return mats.sort((a, b) => {
+        var nameA = DisplayableMaterialName(a, 2).toUpperCase();
+        var nameB = DisplayableMaterialName(b, 2).toUpperCase();
+    });
+}
+
+
+
+function ToggleMissingItems() {
+    ToggleOption('hideMissingItems')
+    RefreshStocksFilter();
+}
+
+function RefreshStocksFilter() {
+    FillStocksTable();
+    UpdateInventoryMaterialsPicker();
+    FilterItems();
+}
+
+function GetItemSubtypeOrType(item) {
+    if (item.subtypeName)
+        return item.subtypeName;
+    return item.typeName;
+}
+
+function GetItemFullName(item) {
+    if (!item)
+        return "???";
+    if (item.subtypeName)
+        return item.typeName + "." + item.subtypeName;
+    return item.typeName.toUpperCase();
+}
+
+function ToggleFavoriteItem(itemName) {
+    config.favoriteStockItems ??= [];
+    var index = config.favoriteStockItems.indexOf(itemName);
+    if (index >= 0) {
+        config.favoriteStockItems.splice(index, 1);
+    } else {
+        config.favoriteStockItems.push(itemName);
+    }
+    SaveConfig();
+
+    UpdateFavoriteItemsButtons();
+}
+
+function UpdateFavoriteItemsButtons() {
+    config.favoriteStockItems ??= [];
+    sideA.querySelectorAll(".cell").forEach(cell => {
+        var itemName = cell.getAttribute("item");
+
+        var button = cell.querySelector("fav");
+        if (config.favoriteStockItems.indexOf(itemName) >= 0) {
+            button.classList.add("favorite");
+        } else {
+            button.classList.remove("favorite");
+        }
+    });
+    SortStockCells();
 }

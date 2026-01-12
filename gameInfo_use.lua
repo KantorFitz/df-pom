@@ -52,7 +52,12 @@ for groupKey,group in pairs(df.global.world.raws.itemdefs) do
         output = output .. '\"subtype\":\"'..tostring(item.subtype)..'\",'
         output = output .. '\"name\":\"'..tostring(item.name)..'\",'
         output = output .. '\"typeName\":\"'..tostring(groupKey)..'\",'
-
+        if groupKey == 'tools' then
+            output = output .. '\"container_capacity\":\"'..tostring(item.container_capacity)..'\",'
+        else 
+            output = output .. '\"container_capacity\":\"0\",'
+        end
+        
         local mt = getmetatable(item)
         if mt and mt.__index then
             if  mt.__index.name_plural ~= nil then
@@ -62,6 +67,7 @@ for groupKey,group in pairs(df.global.world.raws.itemdefs) do
             if  mt.__index.ammo_class ~= nil then
                 output = output .. '\"ammo_class\":\"'..tostring(item.ammo_class)..'\",'
             end
+
         end
 
         output = output .. '},'
