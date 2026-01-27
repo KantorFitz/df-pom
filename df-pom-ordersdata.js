@@ -50,7 +50,7 @@ var propertiesInfos = [
 
     {
         name: "amount_left",
-        displayName: "Left to do",
+        displayName: "One-time order: Amount left to do before the order is closed and removed",
         isInput: true,
         visible: true,
         numeric: true,
@@ -58,6 +58,13 @@ var propertiesInfos = [
     {
         name: "amount_total",
         displayName: "Total to do",
+        isInput: true,
+        visible: false,
+        numeric: true,
+    },
+    {
+        name: "pom_targetQtt",
+        displayName: "Target stocks quantity: try to have this amount available at all times",
         isInput: true,
         visible: true,
         numeric: true,
@@ -71,7 +78,7 @@ var propertiesInfos = [
     {
         name: "item_conditions",
         displayName: "Conditions",
-        visible: true,
+        visible: false,
     },
     {
         name: "max_workshops",
@@ -126,4 +133,19 @@ var craftTypes = [
     "FIGURINE",
     "AMULET",
     "TOTEM"
+]
+
+var capacityItems = [
+    "BARREL",
+    "FLASK",
+    "GOBLET",
+    "BIN",
+    "BAG",
+    "BOX",
+    "CABINET",
+    "BUCKET",
+    "BACKPACK",
+    "QUIVER",
+    "CAGE",
+    "ANIMALTRAP",
 ]

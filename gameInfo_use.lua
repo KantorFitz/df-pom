@@ -12,6 +12,7 @@ local IS_GLASS_FLAG = 49
 local IS_STONE_FLAG = 60
 local IS_CERAMIC_FLAG = 74
 local IGNORED_ITEMS = {''};
+local fullItemName = ''
 
 output = output .. '\"job_material_category\" : {'
 for i = 0, df.job_material_category._last_item do
@@ -47,12 +48,18 @@ for groupKey,group in pairs(df.global.world.raws.itemdefs) do
             end
         end
 
-        output = output .. '\"' .. tostring(item.id) .. '\":{'
+        groupKey = tostring(groupKey):upper()
+        fullItemName = groupKey
+        if tostring(item.id) ~= groupKey then
+            fullItemName = groupKey .. '!' .. tostring(item.id)
+        end
+        output = output .. '\"' .. fullItemName .. '\":{'
         output = output .. '\"subtypeName\":\"'..tostring(item.id)..'\",'
         output = output .. '\"subtype\":\"'..tostring(item.subtype)..'\",'
         output = output .. '\"name\":\"'..tostring(item.name)..'\",'
-        output = output .. '\"typeName\":\"'..tostring(groupKey)..'\",'
-        if groupKey == 'tools' then
+        output = output .. '\"typeName\":\"'..groupKey..'\",'
+        local success, capacity = pcall(function() return item.container_capacity end)
+        if success and capacity ~= nil then
             output = output .. '\"container_capacity\":\"'..tostring(item.container_capacity)..'\",'
         else 
             output = output .. '\"container_capacity\":\"0\",'

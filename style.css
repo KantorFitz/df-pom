@@ -41,6 +41,7 @@ html {
 }
 
 .dfTheme {
+    --colSize: 80px;
     --color-1a: rgb(255, 203, 51);
     --color-1b: rgb(209, 143, 29);
     --color-1c: rgb(172, 104, 37);
@@ -67,9 +68,11 @@ html {
     --color-bgf: rgb(10, 10, 10);
     --color-bgz: rgb(0, 0, 0);
 
-    --color-bta: rgb(93, 111, 122);
-    --color-btb: rgb(78, 71, 78);
-    --color-btc: rgb(58, 55, 64);
+    --color-bta: rgb(90, 111, 122);
+    --color-btb: rgb(62, 77, 85);
+    --color-btc: rgb(44, 54, 59);
+    --color-btd: rgb(30, 38, 41);
+    --color-bte: rgb(21, 26, 29);
 
     --color-btbad: rgb(70, 0, 0);
     --color-btbadb: rgb(37, 0, 0);
@@ -173,10 +176,11 @@ button {
     display: flex;
     align-items: center;
     height: 100%;
+    min-width: 36px;
+    height: 35px;
     margin: 0;
     flex-shrink: 0;
 
-    overflow: hidden;
     line-height: normal;
     color: var(--color-txta);
     cursor: pointer;
@@ -189,7 +193,6 @@ button {
     border-bottom-color: var(--color-btc);
 
     font-size: 100%;
-    height: 35px;
 
     &:hover {
         background-color: var(--color-bta);
@@ -217,12 +220,14 @@ button {
 
         &.ico {
             display: flex;
+            border-radius: 5px;
             justify-content: center;
             align-items: center;
             color: var(--color-txta);
-            height: 35px;
-            width: 32px;
-            aspect-ratio: 1 / 1;
+            height: 30px;
+            top: -1px;
+            left: 0px;
+            min-width: 31px;
             line-height: 100%;
             flex-shrink: 0;
             flex-grow: 0;
@@ -282,6 +287,7 @@ button {
     right: 5px;
     flex-direction: column;
     z-index: 60;
+    padding-right: 0px !important;
     overflow: visible !important;
 
     .anchor {
@@ -300,6 +306,10 @@ button {
 
         b {
             color: var(--color-1a);
+        }
+
+        &.repeat {
+            animation: pulse 1.5s infinite !important;
         }
     }
 }
@@ -353,6 +363,7 @@ button {
 
 
 .tab_inventoryOpened #tabInventoryButton,
+.tab_smeltingOpened #tabSmeltingButton,
 .tab_ordersOpened #tabOrdersButton {
     z-index: 4;
     top: 3px;
@@ -361,7 +372,10 @@ button {
     justify-content: center;
     box-shadow: 0 3px 0 0 var(--color-bgd);
     background-color: var(--color-bgd);
-    pointer-events: none;
+
+    .over {
+        display: none;
+    }
 }
 
 
@@ -371,6 +385,10 @@ button {
 }
 
 .tab_inventoryOpened .inventoryTab {
+    display: flex;
+}
+
+.tab_smeltingOpened .smeltingTab {
     display: flex;
 }
 
@@ -477,17 +495,10 @@ body {
             }
         }
 
-        [totalStockWant="0"] {
+        [totalStockWant="0"]:not(.favorite) {
             display: none !important;
         }
     }
-
-    &.forceShowAllItems {
-        .colHasJob {
-            /*display: flex !important;*/
-        }
-    }
-
 
     &.toggleStockSorting {
 
@@ -523,7 +534,7 @@ body {
 
     &.wait {
         .window {
-            background: #113;
+            background-color: var(--color-bga);
 
             .buttons {
                 display: none;
@@ -533,7 +544,7 @@ body {
 
     .window {
         background: var(--color-bgc);
-        border: var(--color-1b);
+        border: 4px solid var(--color-1a);
         color: var(--color-txta);
         max-width: 500px;
         cursor: pointer;
@@ -541,21 +552,36 @@ body {
         .title {
             font-size: 150%;
             font-weight: bold;
-            background-color: var(--color-bga);
-            padding: 10px;
+            margin: 12px;
             cursor: pointer;
+            text-align: center;
+            color: var(--color-1a);
         }
 
         .message {
-            margin: 20px 50px 20px 50px;
+            margin: 16px 50px 20px 50px;
             cursor: pointer;
+
+            .withIcon {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+            }
         }
 
         .context {
-            padding: 6px;
-            color: var(--color-bgb);
+            padding: 4px;
+            color: var(--color-txte);
             font-style: italic;
-            background-color: var(--color-txtc);
+            text-align: center;
+            background-color: var(--color-bgb);
+            max-height: 4px;
+            overflow: hidden;
+            transition: max-height 0.3s ease-in-out;
+
+            &:hover {
+                max-height: 30px;
+            }
         }
 
         .buttons {
@@ -631,11 +657,12 @@ body {
         z-index: 50;
         overflow: hidden;
         max-height: 0;
-        transition: max-height 0.1s ease-in-out, padding 0.1s ease-in-out;
+        transition: max-height 0.2s ease-in-out, padding 0.2s ease-in-out;
         background-color: var(--color-bgc);
-        padding: 0 10px;
+        padding: 0px 20px;
         font-size: 15px;
         line-height: 150%;
+        width: max-content !important;
 
         b {
             font-weight: normal;
@@ -662,7 +689,7 @@ body {
     &:hover {
         .infos {
             transition: max-height 0.3s ease-in-out, padding 0.3s ease-in-out;
-            padding: 5px 10px;
+            padding: 10px 20px;
             max-height: 500px;
             opacity: 1;
         }
@@ -673,26 +700,24 @@ body {
     z-index: 50;
     top: 0px;
     left: 0px;
-    height: 55px;
     width: 100vw;
     flex-shrink: 0;
 
     .help {
-        .infos {
-            position: fixed;
-            right: 10px;
-            top: 45px;
-        }
+        max-height: 30px;
+        max-width: 30px;
+        overflow: visible;
     }
 
     .menu {
         display: flex;
+        flex-wrap: wrap;
         align-items: flex-end;
         align-content: center;
         justify-content: center;
 
         background: var(--color-bga);
-        overflow: hidden;
+        overflow: visible;
 
         .toolbarLine {
             position: absolute;
@@ -706,21 +731,21 @@ body {
 
         .tabs {
             display: flex;
-            padding: 10px 0 0 0;
+            z-index: 3;
+            padding: 0;
             margin: 0 20px;
-            border-bottom: 3px var(--color-1a) solid;
+            overflow: hidden;
+            max-height: 50px;
 
             .sep {
                 min-width: 7px;
             }
 
             button {
-                z-index: 1;
                 border-width: 3px;
                 align-items: flex-start;
                 justify-content: flex-start;
-                margin-bottom: -1px;
-                top: 2px;
+                margin-bottom: 3px;
                 height: 45px;
                 margin-bottom: -8px;
                 border-bottom-width: 0px;
@@ -728,17 +753,34 @@ body {
                 border-top-right-radius: 8px;
 
                 span {
-                    height: 36px;
-                    line-height: 36px;
+                    height: 32px;
+                    line-height: 32px;
+                }
+
+                .over {
+                    position: absolute;
+                    z-index: 100;
+                    display: block;
+                    height: 30px;
+                    width: 110%;
+                    left: -5%;
+                    top: 31px;
+                    background-color: var(--color-1a);
                 }
             }
         }
 
         .tools {
             display: flex;
-            padding: 10px 7px;
+            flex-wrap: wrap;
+            justify-content: center;
+            padding: 6px 7px;
 
             font-size: 80%;
+
+            &>* {
+                margin: 2px 0;
+            }
         }
 
     }
@@ -746,6 +788,7 @@ body {
 
 
 .ordersTab,
+.smeltingTab,
 .inventoryTab {
     display: none;
     flex-wrap: nowrap;
@@ -753,7 +796,6 @@ body {
     align-content: center;
     align-items: center;
     justify-content: center;
-    max-height: 100%;
     z-index: 1;
     height: 100%;
     max-height: 100%;
@@ -761,58 +803,67 @@ body {
     overflow-y: hidden;
     overflow-x: auto;
     border: #0000 solid;
+    flex-grow: 0;
+    flex-shrink: 1;
+    margin: 0px 10px;
+    /*
     border-top-width: 50px;
     border-bottom-width: 15px;
     border-right-width: 15px;
     border-left-width: 15px;
+    */
 
 }
 
+.searchbar {
+    display: flex;
+    justify-content: center;
+
+    z-index: 10;
+    top: 5px;
+    left: 5px;
+    width: calc(100% - 10px);
+    text-align: center;
+    padding: 10px;
+
+    input,
+    .ico {
+        height: 30px;
+        width: 500px;
+        max-width: 90vw;
+        background-color: var(--color-bgb);
+        font-size: 130%;
+        text-align: center;
+        color: var(--color-1a);
+    }
+
+    .ico {
+        display: block;
+        width: 30px;
+        border: 2px solid var(--color-txtc);
+        border-style: ridge;
+        align-content: center;
+        margin-left: -2px;
+
+        svg {
+            fill: var(--color-1b);
+        }
+    }
+}
 
 .tabsHost {
     position: relative;
+    display: flex;
     flex-grow: 1;
     flex-shrink: 1;
     flex-basis: 10px;
+    margin:10px;
     width: 100%;
+    max-width: 100vw;
     overflow: hidden;
+    justify-content: center;
 
-    .searchbar {
-        position: absolute;
-        display: flex;
-        justify-content: center;
 
-        z-index: 10;
-        top: 5px;
-        left: 5px;
-        width: calc(100% - 10px);
-        text-align: center;
-
-        input,
-        .ico {
-            top: 5px;
-            height: 30px;
-            width: 500px;
-            max-width: 90vw;
-            background-color: var(--color-bgb);
-            font-size: 130%;
-            text-align: center;
-            color: var(--color-1a);
-        }
-
-        .ico {
-            display: block;
-            width: 30px;
-            border: 2px solid var(--color-txtc);
-            border-style: ridge;
-            align-content: center;
-            margin-left: -2px;
-
-            svg {
-                fill: var(--color-1b);
-            }
-        }
-    }
 
 
     .ordersTab {
@@ -825,6 +876,7 @@ body {
             min-height: 100%;
             max-height: 100%;
             overflow: visible;
+            padding-top: 0 10px;
 
             .help {
                 position: absolute;
@@ -1097,10 +1149,6 @@ body {
 
                     }
 
-                    .progressBar {
-                        display: none;
-                    }
-
                     input {
                         color: var(--color-txtb) !important;
                     }
@@ -1109,6 +1157,31 @@ body {
 
                 .toolZone {
                     padding: 0 !important;
+                }
+
+                &.hasTargetQtt {
+                    .property.amount_left {
+                        display: none;
+                    }
+                }
+
+                &:not(.hasTargetQtt) {
+                    .property.pom_targetQtt {
+                        display: none;
+                    }
+                }
+
+                .progressBar {
+                    position: absolute;
+                    bottom: 0;
+                    left: 0;
+                    height: 3px;
+                    background-color: var(--color-1d);
+                    width: 0%;
+
+                    &.full {
+                        background-color: var(--color-2d);
+                    }
                 }
 
                 .property {
@@ -1171,14 +1244,20 @@ body {
                     &.job {
                         flex-basis: 210px;
                         order: 10;
+                    }
 
-                        .progressBar {
-                            position: absolute;
-                            bottom: 0;
-                            left: 0;
-                            height: 3px;
-                            background-color: var(--color-1d);
-                            width: 0%;
+                    &.pom_targetQtt {
+                        flex-basis: 45px;
+                        order: 30;
+                        text-align: right;
+
+                        input {
+                            color: var(--color-1a);
+
+                            &:hover {
+                                background-color: #FFF3;
+                                color: #FFF;
+                            }
                         }
                     }
 
@@ -1188,7 +1267,7 @@ body {
                         text-align: right;
 
                         input {
-                            color: var(--color-1a);
+                            color: var(--color-txta);
 
                             &:hover {
                                 background-color: #FFF3;
@@ -1204,7 +1283,7 @@ body {
                         max-width: 50px;
 
                         input {
-                            color: var(--color-1b);
+                            color: var(--color-txta);
 
                             &:hover {
                                 background-color: #FFF3;
@@ -1464,14 +1543,12 @@ body {
 
 
     .inventoryTab {
-        display: block;
         border-right-width: 0px;
         border-left-width: 0px;
         border-bottom-width: 0px;
         max-width: 100vw;
         min-width: 0;
         width: fit-content;
-        margin: 20px auto;
 
         .inventoryContent {
             display: flex;
@@ -1479,7 +1556,7 @@ body {
             max-width: 100%;
             max-height: 100%;
             min-height: 100%;
-            padding: 20px;
+            padding: 0px 20px 0px 20px;
             gap: 1px;
 
             .inventoryTableHeader {
@@ -1499,8 +1576,8 @@ body {
                 }
 
                 .cell {
-                    flex-basis: 70px;
-                    max-width: 70px;
+                    flex-basis: var(--colSize);
+                    max-width: var(--colSize);
                     flex-grow: 0;
                     flex-shrink: 0;
                     align-content: center;
@@ -1568,7 +1645,7 @@ body {
             .corner {
                 position: absolute;
                 display: flex;
-                top: 20px;
+                top: 0px;
                 left: 20px;
                 width: 200px;
                 height: 28px;
@@ -1683,14 +1760,17 @@ body {
                                 line-height: 0;
                                 color: var(--color-txtg);
 
-                                &.favorite {
-                                    color: var(--color-1a);
-                                }
-
                                 &:hover {
                                     background-color: #FFF2;
                                 }
                             }
+
+                            &.favorite {
+                                fav {
+                                    color: var(--color-1a);
+                                }
+                            }
+
 
                         }
                     }
@@ -1706,11 +1786,10 @@ body {
                             position: relative;
                             display: flex;
                             flex-direction: column;
-                            flex-basis: 70px;
+                            flex-basis: var(--colSize);
                             flex-grow: 0;
                             flex-shrink: 0;
                             white-space: wrap;
-                            transition: opacity 0.2s, background-color 10s ease-out;
                             gap: 1px;
 
                             &:hover {
@@ -1733,19 +1812,29 @@ body {
                                 min-height: 27px;
                                 max-height: 27px;
                                 overflow: visible;
-                                border: 1px solid var(--color-1e);
+                                border: 1px solid var(--color-txtg);
                                 border-radius: 5px;
-                                transition: background-color 15s ease-out;
+                                transition: background-color 5s ease-out;
 
-                                &[stockwant="0"]:before {
-                                    content: "";
-                                    position: absolute;
-                                    bottom: 0;
-                                    left: 0;
-                                    width: 100%;
-                                    height: 1px;
-                                    z-index: 1;
-                                    background-color: #FFF1;
+                                &[stockwant="0"] {
+                                    input {
+                                        opacity: 0.2;
+                                    }
+
+                                    &:before {
+                                        content: "";
+                                        position: absolute;
+                                        bottom: 0;
+                                        left: 0;
+                                        width: 100%;
+                                        height: 1px;
+                                        z-index: 1;
+                                        background-color: #FFF1;
+                                    }
+                                }
+
+                                &:not([want="0"]) {
+                                    border-color: var(--color-1c);
                                 }
 
 
@@ -1775,7 +1864,7 @@ body {
                                 }
 
                                 &:not(.hasJob) {
-                                    border-color: var(--color-txti);
+                                    border-color: #0000;
                                     color: var(--color-txtc);
 
                                     &[stockwant="0"] {
@@ -1860,6 +1949,7 @@ body {
                                         text-align: left;
                                         border: none;
                                         font-family: monospace;
+                                        border-radius: 4px;
 
                                         &:hover {
                                             background-color: var(--color-bgb);
@@ -1880,6 +1970,85 @@ body {
                 }
             }
         }
+    }
+
+    .smeltingTab {
+        align-items: flex-start;
+        gap: 5px;
+        padding-top: 0px;
+        flex-shrink: 1;
+        flex-basis: 1px;
+        max-width: fit-content;
+        min-width: fit-content;
+
+        &>div {
+            background-color: var(--color-bge);
+            padding: 0px 5px;
+
+            .title {
+                text-transform: uppercase;
+            }
+
+            .content {
+                margin: 5px 0;
+                max-width: 40vw;
+
+                button {
+                    display: block;
+                    width: 100%;
+                    margin: 3px 0;
+                    text-align: left;
+                    padding: 0 32px 0 32px;
+                    max-width: 200px;
+                    height:42px;
+
+                    .tag {
+                        display: none;
+                    }
+
+                    &::before {
+                        content: "■";
+                        position: absolute;
+                        display: block;
+                        text-align: center;
+                        left: 0;
+                        top: 0;
+                        width: 25px;
+                        height: 100%;
+                        align-content: center;
+                        font-size: 150%;
+                        color: var(--color-btb);
+                        background-color: var(--color-btc);
+                    }
+
+                    &.enabled {
+                        color: var(--color-1a);
+                        background-color: var(--color-bta);
+
+                        &::before {
+                            content: "▶";
+                            font-size: 110%;
+                            color: var(--color-1a);
+                            background-color: var(--color-txtd);
+                        }
+
+                        .qtt {
+                            color: var(--color-txta);
+                        }
+                    }
+
+                    .qtt {
+                        position: absolute;
+                        right: 5px;
+                        top: 0;
+                        height: 100%;
+                        align-content: center;
+                        color: var(--color-txtd);
+                    }
+                }
+            }
+        }
+
     }
 }
 
@@ -1936,7 +2105,8 @@ body {
         transform: translate(-50%, -50%);
         width: 330px;
         max-width: 330px;
-        background-color: #333;
+        border: 4px solid var(--color-1a);
+        background-color: var(--color-bgd);
         padding: 20px;
         color: #AAA;
         z-index: 100;
@@ -2041,7 +2211,7 @@ body {
                 flex-grow: 0;
 
                 input {
-                    max-width: 70px !important;
+                    max-width: var(--colSize) !important;
                 }
             }
         }
@@ -2079,12 +2249,12 @@ body {
 
             textarea {
                 resize: vertical;
-                background-color: #222;
+                background-color: var(--color-bga);
                 color: #DD0;
             }
 
             .int {
-                background-color: #012;
+                background-color: var(--color-bgc);
                 color: #999;
 
                 b {
@@ -2224,8 +2394,9 @@ body {
         max-width: 85vw;
         width: 85vw;
 
+        border: 4px solid var(--color-1a);
         background-color: #111;
-        padding: 40px 10px 10px 10px;
+        padding: 35px 0 0 0;
         transform: translate(-50%, -50%);
         overflow: hidden;
 
@@ -2246,19 +2417,37 @@ body {
 
         .filter {
             position: absolute;
+            z-index: 10;
             display: flex;
             justify-content: center;
             top: 0px;
             left: 50%;
+            height: 35px;
             transform: translateX(-50%);
             width: 100%;
             background-color: #222;
+            overflow: visible;
+
+            .help {
+                width: 35px;
+                overflow: visible;
+
+                .infos {
+                    width: max-content;
+                }
+            }
 
             button {
                 height: 100%;
                 width: auto;
                 aspect-ratio: 1/1;
                 margin-left: 5px;
+                justify-content: center;
+
+                svg {
+                    left: -1px;
+                    top: 1px;
+                }
             }
 
             input {
@@ -2472,7 +2661,7 @@ body {
 .bottomLine {
     position: absolute;
     display: flex;
-    z-index: 190;
+    z-index: 1000;
     bottom: 0px;
     left: 0;
     padding: 3px;
@@ -2547,7 +2736,84 @@ body {
 }
 
 
+.disclaimer {
+    position: absolute;
+    display: flex;
+    z-index: 1000;
+    top: 0;
+    left: 0;
+    min-width: 100vw;
+    height: 100vh;
+    justify-content: center;
+    align-items: center;
 
+    .bg {
+        position: absolute;
+        display: block;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background-image: url(df-pom-bg2.jpg);
+        background-size: cover;
+        filter: brightness(0.15) contrast(1.1);
+    }
+
+    .content {
+        display: flex;
+        flex-direction: column;
+        padding: 30px 50px 25px;
+        max-width: 850px;
+        color: var(--color-txta);
+        background-color: var(--color-bgf);
+        text-align: center;
+
+        h1 {
+            font-size: 150%;
+        }
+
+        &>div {
+            display: flex;
+            text-align: left;
+            justify-content: flex-start;
+            align-content: center;
+            margin: 10px 0;
+
+            svg {
+                min-width: 30px;
+                min-height: 30px;
+                margin: 0 10px;
+                fill: var(--color-1a);
+            }
+
+            p {
+                margin: 0px 0 7px;
+                line-height: 140%;
+
+                b {
+                    color: var(--color-1a);
+                }
+
+                span {
+                    display: inline-block;
+                }
+            }
+        }
+
+        .buttons {
+            display: flex;
+            justify-content: center;
+
+            button {
+                width: 200px;
+                text-align: center;
+                justify-content: center;
+                font-size: 120%;
+            }
+        }
+
+    }
+}
 
 
 
@@ -2562,5 +2828,19 @@ body {
 
     100% {
         opacity: 0;
+    }
+}
+
+@keyframes pulse {
+    0% {
+        opacity: 0.9;
+    }
+
+    20% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0.9;
     }
 }

@@ -9,6 +9,7 @@ local itemSub = ''
 local name = ''
 local mi ='';
 local subDef = nil;
+local containedItems;
 
 if startIndex == 69420 then
 	startIndex = 0
@@ -29,6 +30,11 @@ for _, item in ipairs(df.global.world.items.other.IN_PLAY) do
 	end
 
 	if item.getType == nil then
+		goto continue
+	end
+	
+	containedItems = dfhack.items.getContainedItems(item)
+	if containedItems and #containedItems > 0 then
 		goto continue
 	end
 

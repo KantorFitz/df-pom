@@ -18,8 +18,6 @@ var jobsInfosStartIndex = 0;
 var jobsInfosMaxScans = 1000;
 var gameInfoLuaUpdated = false;
 
-
-
 function cl(msg) { console.log(msg); }
 
 
@@ -109,6 +107,7 @@ ipcMain.handle("GetGameStatus", async (e) => {
             var oldClipboard = clipboard.readText();
             execFile(path, args, (error, stdout, stderr) => {
                 let data = clipboard.readText();
+                clipboard.writeText(oldClipboard);
 
                 if (error) {
                     data = {
@@ -120,7 +119,6 @@ ipcMain.handle("GetGameStatus", async (e) => {
                         }
                     };
                     cl(data);
-                    clipboard.writeText(oldClipboard);
                     resolve(data);
                     return;
                 }
@@ -129,7 +127,6 @@ ipcMain.handle("GetGameStatus", async (e) => {
                     data = data.replace(/(,)+}/g, "}");
                     data = data.replace(/(,)+]/g, "]");
                     data = JSON.parse(data);
-                    clipboard.writeText(oldClipboard);
                     resolve(data);
 
                 } catch (e) {
@@ -143,11 +140,9 @@ ipcMain.handle("GetGameStatus", async (e) => {
                     };
                     readingStuff = false;
                     cl(data);
-                    clipboard.writeText(oldClipboard);
                     resolve(data);
                 }
             });
-            clipboard.writeText(oldClipboard);
 
         });
 
@@ -212,7 +207,6 @@ ipcMain.handle("GetGameInfos", async (e) => {
                         }
                     };
                     cl(data);
-                    clipboard.writeText(oldClipboard);
                     resolve(data);
                     return;
                 }
@@ -220,11 +214,11 @@ ipcMain.handle("GetGameInfos", async (e) => {
                 try {
                     //read from clipboard file
                     let data = clipboard.readText();
+                    clipboard.writeText(oldClipboard);
                     //replace ",}" with "}" to fix invalid JSON
                     data = data.replace(/(,)+}/g, "}");
                     data = data.replace(/(,)+]/g, "]");
                     data = JSON.parse(data);
-                    clipboard.writeText(oldClipboard);
                     resolve(data);
 
                 } catch (e) {
@@ -238,11 +232,9 @@ ipcMain.handle("GetGameInfos", async (e) => {
                     };
                     readingStuff = false;
                     cl(data);
-                    clipboard.writeText(oldClipboard);
                     resolve(data);
                 }
             });
-            clipboard.writeText(oldClipboard);
         });
 
     }).finally(() => {
@@ -299,11 +291,10 @@ ipcMain.handle("GetJobsInfos", async () => {
                             title: "Waiting for Dwarf Fortress...",
                             msg: "Please open the 'Job Orders > Create Task' menu once to allow data extraction.",
                             context: "GetJobsInfos2a",
-                            buttons: ["WAIT", "RESET APP PATHS"]
+                            icon: "orders icon.png"
                         }
                     };
                     cl(data);
-                    clipboard.writeText(oldClipboard);
                     resolve(data);
                     return;
                 }
@@ -311,6 +302,7 @@ ipcMain.handle("GetJobsInfos", async () => {
                 try {
                     //read from clipboard file
                     let data = clipboard.readText();
+                    clipboard.writeText(oldClipboard);
 
                     data = data.replace(/,}/g, "}");
                     data = data.replace(/,]/g, "]");
@@ -321,30 +313,26 @@ ipcMain.handle("GetJobsInfos", async () => {
                             error: {
                                 title: "Waiting for Job Orders",
                                 msg: "Please open the 'Job Orders > Create Task' menu once to allow data extraction.",
-                                context: "GetJobsInfos2b",
-                                buttons: ["WAIT", "RESET APP PATHS"]
+                                icon: "orders icon.png",
+                                context: "GetJobsInfos2b"
                             }
                         };
                         cl(data);
-                        clipboard.writeText(oldClipboard);
                         resolve(data);
                         return;
                     }
                     jobsInfosStartIndex = data.pauseAtIndex;
-                    clipboard.writeText(oldClipboard);
                     resolve(data);
 
                 } catch (e) {
                     data = "wait"
                     cl(data);
-                    clipboard.writeText(oldClipboard);
                     resolve(data);
                     readingStuff = false;
                     return;
 
                 }
             });
-            clipboard.writeText(oldClipboard);
         });
 
     }).finally(() => {
@@ -403,7 +391,6 @@ ipcMain.handle("GetStocks", async () => {
                         }
                     };
                     cl(data);
-                    clipboard.writeText(oldClipboard);
                     resolve(data);
                     return;
                 }
@@ -411,6 +398,7 @@ ipcMain.handle("GetStocks", async () => {
                 try {
                     //read from clipboard file
                     let data = ProcessStockData(clipboard.readText())
+                    clipboard.writeText(oldClipboard);
                     if (Object.keys(data.stocks).length == 0) {
                         data = {
                             error: {
@@ -422,11 +410,9 @@ ipcMain.handle("GetStocks", async () => {
                         };
                         cl(data);
                         readingStuff = false;
-                        clipboard.writeText(oldClipboard);
                         resolve(data);
                         return;
                     }
-                    clipboard.writeText(oldClipboard);
                     resolve(data);
 
                 } catch (e) {
@@ -441,14 +427,12 @@ ipcMain.handle("GetStocks", async () => {
                         };
                         cl(data);
                         readingStuff = false;
-                        clipboard.writeText(oldClipboard);
                         resolve(data);
                         return;
                     }
                     reject(e);
                 }
             });
-            clipboard.writeText(oldClipboard);
 
         });
     }).finally(() => {
@@ -809,4 +793,5 @@ function ProcessStockData(rawData) {
 async function pause(milliseconds) {
     return new Promise(resolve => setTimeout(resolve, milliseconds));
 }
+
 

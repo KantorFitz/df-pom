@@ -9,7 +9,6 @@ var config = {}
 var conditionJustCopied = false;
 var currentHoverOrder = null;
 var copiedCondition = null;
-var displayedTab = "orders";
 
 var mustReadOrders = false;
 var mustWriteOrders = false;
@@ -28,16 +27,25 @@ var hoveredNumInput = null;
 var hoveredConditionsOrder;
 var gameStatus;
 var lastGameStatusCheck = 0;
+var lastPopData;
+var lastFavorites;
 
 var itemJob = [];
 var itemHasJob = {};
 var jobSortedNames = [];
 var itemTypesRequiringSubtypes = [];
 var itemMatStockChanges = [];
+var itemsWithCapacity = [];
+var itemWithDimensions = {
+    "BAR": 150,
+    "CLOTH": 10000,
+    "THREAD": 15000
+}
 
 var emptyCellsCreated = false;
 var wasShiftPressed = false;
 var wasCtrlPressed = false;
+var lastToastMessage = ""
 const PAUSECHANNEL_ALLSTASKS = -2;
 const PAUSECHANNEL_FROMTASK = -1;
 const PAUSECHANNEL_ONETASK = 0;
@@ -75,6 +83,8 @@ var jobs = null;
 var tempJobs = [];
 var gm = {};
 var qqq;
+var editedOrder;
+var editedOrderIsNew;
 var itemsHumanNamesToItem = {}
 var sortedItemSubTypesIds = [];
 var sortedJobTypes = [];
@@ -93,12 +103,14 @@ var materialsGroups = [
     "STONE",
     "METAL",
     "GEM",
-    "COAL",
+    "FUEL",
     "WOOD",
     "LEATHER",
     "GLASS",
     "CERAMIC",
     "BONE",
+    "CLOTH",
+    "THREAD",
     "OTHER",
 ]
 
@@ -150,6 +162,10 @@ async function InitData() {
 
     Toast("Initializing...");
     await GetConfig();
+
+    if (!config.disclaimerAccepted)
+        $(".disclaimer")[0].classList.remove("hidden");
+
     ApplyConfigClasses();
 
     let ok = false;
@@ -180,6 +196,8 @@ async function InitData() {
     await QueueOrdersRead(true);
     await QueueStocksRead(true);
     RefreshStocksFilter()
+    CreateSmeltingButtons()
+
     await DataAutoUpdater();
 }
 
@@ -300,8 +318,11 @@ async function TryReadWriteOrders(immediate = false) {
             lastFileAccess = Date.now();
 
             manualWriteOrders = false;
+            mustReadOrders = true;
 
-        } else if (mustReadOrders || config.toggleAutoReadOrders) {
+        }
+
+        if (mustReadOrders || config.toggleAutoReadOrders) {
 
             if (manualReadOrders)
                 Toast("Reading orders...");
@@ -312,7 +333,6 @@ async function TryReadWriteOrders(immediate = false) {
             lastFileAccess = Date.now();
 
             manualReadOrders = false;
-
         }
     }
 }
@@ -320,7 +340,7 @@ async function TryReadWriteOrders(immediate = false) {
 
 
 document.addEventListener("wheel", e => {
-    if (hoveredNumInput != null && TimeSinceInputHovered() > 300) {
+    if (hoveredNumInput != null) { // && TimeSinceInputHovered() > 300
         e.preventDefault();
 
         var delta = Math.sign(e.deltaY);
@@ -369,7 +389,7 @@ function CheckError(data, waitingToken) {
             const d = data.error;
             const cb = errorCallback;
             const wt = waitingToken;
-            PopInfo(d.title, d.msg, d.context, d.buttons, errorCallback, wt);
+            PopInfo(d.title, d.msg, d.context, d.buttons, errorCallback, wt, d.icon);
         });
         return true;
     }
@@ -410,12 +430,13 @@ async function GetGameInfos() {
     sortedItemSubTypesIds = Object.keys(gm.items);
     sortedItemSubTypesIds.sort((a, b) => { return a.localeCompare(b); });
 
-    var itemNames = Object.keys(gm.items).map(key => gm.items[key].name);
-    itemNames = [...new Set(itemNames)];
-
     itemsTypesAndSubtypes = Object.values(gm.items).map(item => item.typeName);
     itemsTypesAndSubtypes.push(...Object.values(gm.items).map(item => item.subtypeName));
     itemsTypesAndSubtypes = [...new Set(itemsTypesAndSubtypes)];
+
+    //rename all gm.items objects keys by removing the "!" contained in the key name
+
+
 
     Object.keys(gm.items).forEach((itemId) => {
         var item = gm.items[itemId];
@@ -438,8 +459,10 @@ async function GetGameInfos() {
     gm.materials["GLASS_GREEN"] = { Types: ["GLASS"] };
     gm.materials["GLASS_CLEAR"] = { Types: ["GLASS"] };
     gm.materials["GLASS_CRYSTAL"] = { Types: ["GLASS"] };
-    gm.materials["COAL:CHARCOAL"] = { Types: ["COAL"] };
-    gm.materials["COAL:COKE"] = { Types: ["COAL"] };
+    gm.materials["COAL:CHARCOAL"] = { Types: ["FUEL"] };
+    gm.materials["COAL:COKE"] = { Types: ["FUEL"] };
+    gm.materials["CLOTH"] = { Types: ["CLOTH"] };
+    gm.materials["THREAD"] = { Types: ["THREAD"] };
     gm.materials["SILK"] = { Types: ["SILK"] };
     Object.keys(gm.materials).forEach((mat) => {
         matI = gm.materials[mat]
@@ -449,9 +472,9 @@ async function GetGameInfos() {
 
         matI.id = mat;
         matI.Types.forEach((mt) => {
-            if (!gm["material_types"][mt])
-                gm["material_types"][mt] = []
-            gm["material_types"][mt].push(mat)
+            if (!gm.material_types[mt])
+                gm.material_types[mt] = []
+            gm.material_types[mt].push(mat)
         });
         gm.materials[mat] = matI;
     });
@@ -467,18 +490,26 @@ async function GetGameInfos() {
     itemTypesRequiringSubtypes = [...new Set(itemTypesRequiringSubtypes)];
 
     Object.values(gm.item_types).forEach((itemType) => {
-        gm.items[itemType] = {
-            subtypeName: "",
-            typeName: itemType,
-            name: itemType.toLowerCase(),
-            isTypeOnly: true
-        };
+        if (!itemTypesMembers[itemType]) {
+            gm.items[itemType] = {
+                subtypeName: "",
+                typeName: itemType,
+                name: itemType.toLowerCase(),
+                isTypeOnly: true
+            };
+        }
     });
 
-    gm.items["CRAFTS"] = {
+    gm.items["CRAFTS!"] = {
         name: "crafts",
         subtypeName: "",
         typeName: "CRAFTS"
+    };
+
+    gm.items["FOOD!"] = {
+        name: "food",
+        subtypeName: "",
+        typeName: "FOOD"
     };
 
     var flags = [];
@@ -487,6 +518,12 @@ async function GetGameInfos() {
     Object.keys(gm.job_item_flags3).forEach(key => { flags.push(gm.job_item_flags3[key]) });
     flags = [...new Set(flags)];
     gm.itemFlags = flags.filter(f => f != "nil");
+
+    //mark hard coded items that have capacity
+    capacityItems.forEach(itemName => {
+        if (Object.keys(gm.items).includes(itemName.toUpperCase()))
+            gm.items[itemName.toUpperCase()].container_capacity = 1;
+    });
 
     return true;
 }
@@ -546,7 +583,7 @@ function DragStart(e) {
     var myRow = e.target.closest(".orderRow");
     if (myRow) {
         var siblings = Array.from(myRow.parentElement.children);
-        e.dataTransfer.setData("orderIndex", siblings.indexOf(myRow));
+        e.dataTransfer.setData("orderIndex", siblings.indexOf(myRow) - 1);
         setTimeout(() => { $("body")[0].classList.add("dragging") }, 10);
     } else {
         //cancel drag
@@ -580,7 +617,7 @@ function DragDrop(e) {
         return;
 
     const fromIndex = e.dataTransfer.getData("orderIndex");
-    const toIndex = Array.from(ordersTable.children).indexOf(targetRow);
+    const toIndex = Array.from(ordersTable.children).indexOf(targetRow) - 1;
     if (fromIndex === toIndex)
         return;
 
@@ -590,25 +627,29 @@ function DragDrop(e) {
 
     MarkEdited(movedOrder);
     UpdateOrdersTable();
+
     /*
     if (toIndex > fromIndex) {
         ordersTable.insertBefore(ordersTable.children[fromIndex + 1], ordersTable.children[toIndex + 2]);
     } else {
         ordersTable.insertBefore(ordersTable.children[fromIndex + 1], ordersTable.children[toIndex + 1]);
     }
-    */
+        */
 
-    if (config.toggleAutoSaveOrders)
-        QueueOrdersSave(true);
 }
 
 
-function UpdateOrdersTable() {
+function UpdateOrdersTable(updateSmeltingButtons = true) {
     if (!ordersTable)
         return;
 
     var orderlines = ordersTable.querySelectorAll(".orderRow")
-    orderlines.forEach(line => { line.remove() });
+    orderlines.forEach(line => {
+        var id = line.getAttribute("orderId");
+        var order = orders.find(o => o.id == id);
+        if (order == null)
+            line.remove()
+    });
 
     orders.forEach(order => {
 
@@ -627,9 +668,9 @@ function UpdateOrdersTable() {
             editedLine.addEventListener("dragleave", (e) => { DragLeave(e); });
             editedLine.addEventListener("drop", (e) => { DragDrop(e); });
             editedLine.addEventListener("dragend", (e) => { DragEnd(e); });
-            editedLine.addEventListener("mouseenter", (e) => { currentHoverOrder = GetOrderFromElement(e.currentTarget); SetOrderTools(e.currentTarget); });
-            editedLine.addEventListener("mousemove", (e) => { currentHoverOrder = GetOrderFromElement(e.currentTarget); SetOrderTools(e.currentTarget); });
-            editedLine.addEventListener("mouseleave", (e) => { currentHoverOrder = null;; SetOrderTools(null) });
+            editedLine.addEventListener("mouseenter", (e) => { currentHoverOrder = GetOrderFromElement(e.currentTarget); ShowOrderTools(e.currentTarget); });
+            editedLine.addEventListener("mousemove", (e) => { currentHoverOrder = GetOrderFromElement(e.currentTarget); ShowOrderTools(e.currentTarget); });
+            editedLine.addEventListener("mouseleave", (e) => { currentHoverOrder = null;; ShowOrderTools(null) });
 
             //place edited line at the right order in parent
             const referenceNode = ordersTable.children[orderIndex + 1]; //+1 to skip header
@@ -677,6 +718,28 @@ function UpdateOrdersTable() {
         if (order.item_conditions === undefined)
             order.item_conditions = [];
 
+        order.pom_targetQtt = GetOrderTargetQtt(order);
+        if (order.pom_targetQtt > 0 && OrderIsRepeating(order)) {
+            editedLine.classList.add("hasTargetQtt");
+        } else {
+            editedLine.classList.remove("hasTargetQtt");
+        }
+
+        var progressBar = editedLine.querySelector(`.progressBar`);
+        if (!progressBar) {
+            progressBar = document.createElement("div");
+            progressBar.classList.add("progressBar");
+            progressBar.text = "."
+            editedLine.appendChild(progressBar);
+        }
+        var pc = GetOrderProgressPercent(order);
+        progressBar.style.width = pc + "%";
+        if (pc == 100) {
+            progressBar.classList.add("full");
+        } else {
+            progressBar.classList.remove("full");
+        }
+
         var possibleProperties = propertiesInfos.filter(prop => prop.visible);
         for (const property in order) {
 
@@ -702,11 +765,7 @@ function UpdateOrdersTable() {
                     cell.classList.remove("yesno");
                 }
 
-                if (property == "amount_total") {
-                    editedLine.insertBefore(cell, editedLine.querySelector(`.property.amount_left`));
-                } else {
-                    editedLine.appendChild(cell);
-                }
+                editedLine.appendChild(cell);
             }
 
             cell.setAttribute("title", propInfo.displayName);
@@ -738,15 +797,6 @@ function UpdateOrdersTable() {
 
             if (property == "job") {
                 cellText = GetOrderJobLabel(order);
-
-                var progressBar = editedLine.querySelector(`.property.${property} .progressBar`);
-                if (!progressBar) {
-                    progressBar = document.createElement("div");
-                    progressBar.classList.add("progressBar");
-                    progressBar.text = "."
-                    cell.appendChild(progressBar);
-                }
-                progressBar.style.width = ((order.amount_total - order.amount_left) / order.amount_total * 100) + "%";
             }
 
             if (property === "material") {
@@ -787,29 +837,18 @@ function UpdateOrdersTable() {
                     cell.appendChild(numDiv);
                 }
 
-                var conditions = GetOrderConditions(order);
                 UpdateConditionsContainer(order);
 
             } else {
 
                 cell.innerHTML = "<div>" + cellText + "</div>";
 
-                if (property == "job") {
-                    var progressBar = editedLine.querySelector(`.property.${property} .progressBar`);
-                    if (!progressBar) {
-                        progressBar = document.createElement("div");
-                        progressBar.classList.add("progressBar");
-                        progressBar.text = "."
-                        cell.appendChild(progressBar);
-                    }
-                    progressBar.style.width = ((order.amount_total - order.amount_left) / order.amount_total * 100) + "%";
-                }
-
             }
 
             possibleProperties = possibleProperties.filter(prop => prop.name !== property);
         }
 
+        //create cells for properties that are not present in this order object
         possibleProperties.forEach(prop => {
             var cell = editedLine.querySelector(`.property.${prop.name}`);
             if (!cell) {
@@ -856,11 +895,40 @@ function UpdateOrdersTable() {
         }
     });
 
+    if (updateSmeltingButtons)
+        CheckSmeltingJobs();
+
+    FilterJobs()
 }
+
+
+function CheckSmeltingJobs() {
+    config.smeltOrders = []
+
+    orders.forEach(order => {
+        if (order.deleted)
+            return;
+
+        smeltingOrders.forEach(smelting => {
+            if ((smelting.job == order.job && (smelting.material && smelting.material == order.material))
+                || (order.reaction != null && smelting.reaction == order.reaction)) {
+                config.smeltOrders.push(smelting.id + "");
+            }
+        });
+    });
+
+    UpdateSmeltingButtons();
+}
+
 
 function GetOrderConditions(order) {
     var conditions = order.item_conditions;
     //remove all conditions that correspond to a PauseCondition object
+    if (!conditions) {
+        cl("No conditions found for order id " + order.id);
+        cl(order)
+        return [];
+    }
     conditions = conditions.filter(cond => !(cond.condition === pauseAll.condition && cond.value === pauseAll.value));
     conditions = conditions.filter(cond => !(cond.condition === pauseFrom.condition && cond.value === pauseFrom.value));
     conditions = conditions.filter(cond => !(cond.condition === pauseOne.condition && cond.value === pauseOne.value));
@@ -868,9 +936,24 @@ function GetOrderConditions(order) {
 }
 
 function UpdateConditionsContainer(order) {
+    //condition editor disabled
+    return;
+
+    if (!order)
+        return;
+
     var conditions = GetOrderConditions(order);
     var editedLine = ordersTable.querySelector(`div[orderId='${order.id}']`);
+    if (!editedLine) {
+        cl("No edited line found for order id " + order.id);
+        cl(order);
+        return;
+    }
+
     var cell = editedLine.querySelector(`.property.item_conditions`);
+    if (!cell)
+        return;
+
     var property = "item_conditions"
     //remove container if exists
     container = editedLine.querySelector(`.property.${property} .conditionsContainer`);
@@ -1009,7 +1092,7 @@ function UpdateConditionsContainer(order) {
         buts.appendChild(addCondButton[0]);
     }
 
-    var numDiv = editedLine.querySelector(`.property.${property} .conditionsNum`);
+    var numDiv = editedLine.querySelector(`.conditionsNum`);
     numDiv.textContent = conditions.length > 0 ? "" + conditions.length + "c" : "-";
 
     container.appendChild(buts);
@@ -1019,13 +1102,14 @@ function UpdateConditionsContainer(order) {
 function UpdateOrdersLabels() {
     var labels = document.querySelectorAll(".orderRow .property.job");
     labels.forEach(label => {
-        var order = GetOrderFromElement(label.closest(".orderRow"));
+        let order = GetOrderFromElement(label.closest(".orderRow"));
         if (order)
             label.innerHTML = GetOrderJobLabel(order);
     });
 }
 
 
+/*
 function AddCondition(order) {
     condition = {
         "condition": "GreaterThan",
@@ -1039,20 +1123,14 @@ function AddCondition(order) {
     order.item_conditions.push(condition);
 
     MarkEdited(order);
-    if (config.toggleAutoSaveOrders)
-        QueueOrdersSave(true);
-
     UpdateOrdersTable();
     OpenConditionEditor(order, order.item_conditions.length - 1);
 }
+*/
 
 function DeleteCondition(order, conditionIndex) {
     order.item_conditions.splice(conditionIndex, 1);
     MarkEdited(order);
-    UpdateConditionsContainer(order);
-
-    if (config.toggleAutoSaveOrders)
-        QueueOrdersSave();
 }
 
 function CopyCondition(order, conditionIndex) {
@@ -1067,12 +1145,7 @@ function PasteCondition(order) {
 
     order.item_conditions.push(copiedCondition);
     MarkEdited(order);
-    UpdateConditionsContainer(order);
-
-    if (config.toggleAutoSaveOrders)
-        QueueOrdersSave(true);
 }
-
 
 
 
@@ -1142,6 +1215,7 @@ async function ReadOrders() {
     }
 
     orders.forEach(order => {
+        GetJobFromOrder(order)
         if (order.item_subtype == "ITEM_ARMOR_ROBE")
             order.item_subtype = "ITEM_ARMOR_DRESS";
     });
@@ -1154,34 +1228,65 @@ async function ReadOrders() {
 }
 
 function UpdateStocksWanted() {
-    var cellsWanted = $(".cell.editable.hasJob[want]")
-
-    var itemsToUpdate = []
     //update cells with wanted qtt (update value or remove wanted flag if job no longer exists)
+
+    let itemsToUpdate = []
+    var cellsWanted = $(".cell.editable.hasJob[want]")
     cellsWanted.forEach(cell => {
         var jobId = parseInt(cell.getAttribute("jobId"));
         var job = jobs[jobId];
         if (!job)
             return;
-        itemsToUpdate.push(JobItemName(job));
+
+        item = GetJobItem(job);
+        if (!item) {
+            cl("No item found for job id " + jobId);
+            cl(job);
+        } else {
+            itemsToUpdate.push(item);
+        }
     });
 
     orders.forEach(order => {
-        if (order.foundJob)
-            itemsToUpdate.push(JobItemName(order.foundJob));
+        if (order.jobInfo)
+            itemsToUpdate.push(GetJobItem(order.jobInfo));
     });
 
     itemsToUpdate = [...new Set(itemsToUpdate)];
-    itemsToUpdate.forEach(itemName => {
-        UpdateStockItemLine(itemName);
+    itemsToUpdate.forEach(item => {
+        UpdateStockItemLine(item);
     });
 }
 
 async function WriteOrders() {
+    //check frequency / condition
+
+    orders.forEach(order => {
+        if (OrderIsRepeating(order)) {
+            if (order.frequency != "Daily") {
+                order.frequency = "Daily"
+                MarkEdited(order);
+            }
+        } else {
+            if (order.frequency != "OneTime") {
+                MarkEdited(order);
+                order.frequency = "OneTime"
+            }
+        }
+    });
+
     //check if any new, edited or deleted orders exist
     var hasChanges = orders.some(o => o.edited === true || o.deleted === true || o.isNew === true);
     if (!hasChanges)
         return;
+
+    await GetGameStatus();
+    while (gameStatus.workOrderConditionOpen == "true") {
+        Toast("Cannot save modifications while work order conditions are being edited in-game as this could crash the game.<br><b>Please close the Order Conditions Editor in-game</b> to save changes.");
+        await pause(500);
+        await GetGameStatus();
+    }
+    Toast("")
 
     Trace("Writing orders...");
 
@@ -1200,6 +1305,7 @@ async function WriteOrders() {
     //clear edited flags
     //remove "edited" property from all orders
     orders.forEach(order => { if (order.edited) delete order.edited; });
+    orders.forEach(order => { if (order.isNew) delete order.isNew; });
 
     //remove empty properties
     clonedOrders = CloneOrdersNoDom(orders);
@@ -1226,7 +1332,6 @@ async function WriteOrders() {
     $(".editable.updating").forEach(el => el.classList.remove("updating"));
 
     UpdateOrdersTable();
-    UpdateStocksWanted();
 }
 
 function DeleteEmptyKeys(obj) {
@@ -1256,7 +1361,7 @@ function CloneOrdersNoDom(orders) {
         for (const k in orders) {
             if (k.endsWith("_cell") || k.endsWith("_element"))
                 continue;
-            if (k == "isNew" || k == "orderHovered" || k == "jobInfo" || k == "foundJob" || k == "edited")
+            if (k == "isNew" || k == "orderHovered" || k == "jobInfo" || k == "jobInfo" || k == "edited" || k == "pom_targetQtt")
                 continue;
             if (k == "max_workshops" && orders[k] === 0)
                 continue;
@@ -1320,7 +1425,7 @@ function ReloadCss() {
 function CreateInputForOrders(onChangeCallback, orderObject, affectedProperty, conditionIndex = -1) {
     input = document.createElement("input");
     input.type = "number";
-    input.value = conditionIndex > -1 ? orderObject["item_conditions"][conditionIndex].value : orderObject[affectedProperty];
+    input.value = conditionIndex > -1 ? orderObject.item_conditions[conditionIndex].value : orderObject[affectedProperty];
     input.classList.add("inputNumber");
 
     input.setAttribute("orderId", orderObject.id);
@@ -1357,27 +1462,34 @@ function PrepareInput(input, onChangeCallback) {
 
 function InputChangeCallback_PropertyValue(e) {
     var id = e.target.getAttribute("orderId");
-    var order = orders.find(o => o.id == id);
+    var order = GetOrderById(id);
 
     MarkEdited(order);
     var prop = e.target.getAttribute("affectedProp");
-    order[prop] = parseInt(e.target.value);
-    order[prop + "_cell"].childNodes[0].nodeValue = order[prop];
-    if (config.toggleAutoSaveOrders)
-        QueueOrdersSave();
+
+    if (prop == "pom_targetQtt") {
+        SetOrderTargetQtt(order, parseInt(e.target.value));
+    } else {
+        order[prop] = parseInt(e.target.value);
+        order[prop + "_cell"].childNodes[0].nodeValue = order[prop];
+        if (prop == "amount_left") {
+            if (order[prop] == 0)
+                ToggleDeleteOrder(order);
+
+            order.amount_total = order.amount_left;
+        }
+    }
 }
 
 function InputChangeCallback_ConditionValue(e) {
     var id = e.target.getAttribute("orderId");
-    var order = orders.find(o => o.id == id);
+    var order = GetOrderById(id);
     var condIndex = e.target.getAttribute("conditionIndex");
 
     MarkEdited(order);
-    var condition = order["item_conditions"][condIndex];
+    var condition = order.item_conditions[condIndex];
     condition.value = parseInt(e.target.value);
     condition.value_element.value = condition.value;
-    if (config.toggleAutoSaveOrders)
-        QueueOrdersSave();
 }
 
 function MarkEdited(order) {
@@ -1387,19 +1499,15 @@ function MarkEdited(order) {
     if (line)
         line.classList.add("edited");
 
-    var outItem = order.foundJob?.io?.out?.[0];
-    if (outItem?.item) {
-        var itemName = JobItemName(order.foundJob);
-        UpdateStockItemLine(itemName);
-    }
+    var outItem = GetJobItem(order.jobInfo);
+    if (outItem)
+        UpdateStockItemLine(outItem);
+
+    UpdateConditionsContainer(order);
+
+    if (config.toggleAutoSaveOrders)
+        QueueOrdersSave(false);
 }
-
-
-function GetOrderFromElement(element) {
-    var id = element.closest(".orderRow")?.getAttribute("orderId");;
-    return orders.find(o => o != null && o.id == id);
-}
-
 
 function PauseAllTasks() {
     allOrdersPaused = !allOrdersPaused;
@@ -1425,7 +1533,7 @@ function PauseAllTasksFrom(myOrder) {
     var paused = IsTaskPaused(myOrder, PAUSECHANNEL_FROMTASK);
 
     for (let i = index; i < orders.length; i++) {
-        var order = orders[i];
+        let order = orders[i];
         if (paused) {
             ResumeTask(order, PAUSECHANNEL_FROMTASK);
         } else {
@@ -1438,28 +1546,22 @@ function PauseAllTasksFrom(myOrder) {
 function PauseTask(order, stopChannel = 0) {
     var pauseCondition = GetPauseCondition(stopChannel);
 
-    if (!order.item_conditions)
-        order.item_conditions = [];
+    order.item_conditions ??= [];
 
     if (order.item_conditions.findIndex(cond => cond.condition === pauseCondition.condition && cond.value === pauseCondition.value) === -1) {
         order.item_conditions.push(pauseCondition);
     }
 
     MarkEdited(order);
-    if (config.toggleAutoSaveOrders)
-        QueueOrdersSave();
 }
 
 function ResumeTask(order, stopChannel = 0) {
     var pauseCondition = GetPauseCondition(stopChannel);
 
-    if (!order.item_conditions)
-        order.item_conditions = [];
+    order.item_conditions ??= [];
     order.item_conditions = order.item_conditions.filter(cond => !(cond.condition === pauseCondition.condition && cond.value === pauseCondition.value));
 
     MarkEdited(order);
-    if (config.toggleAutoSaveOrders)
-        QueueOrdersSave();
 }
 
 function IsTaskPaused(order, stopChannel = 0) {
@@ -1476,7 +1578,7 @@ function IsTaskPaused(order, stopChannel = 0) {
 function GetPauseCondition(stopChannel = 0) {
     return {
         condition: "LessThan",
-        value: stopChannel
+        value: stopChannel - 10
     };
 }
 
@@ -1574,7 +1676,8 @@ function FilterItems() {
         if (!term)
             return;
         itemCells.forEach(cell => {
-            var itemName = cell.getAttribute("item").toUpperCase();
+            //var itemName = cell.getAttribute("item").toUpperCase();
+            var itemName = cell.getAttribute("itemLabel").toUpperCase();
             if (itemName.indexOf(term) > -1) {
                 cell.classList.remove("hidden");
             }
@@ -1606,14 +1709,18 @@ function SetAutoFill(input, sourceData, allowMultiples) {
     fuses[input.getAttribute("id")] = new Fuse(sourceData);
 
     if (currendFuseInput != null)
-        currendFuseInput.removeEventListener("input", AutoFillFieldChanged);
+        currendFuseInput.removeEventListener("input", AutoFillFieldChangedEvent);
 
     currendFuseInput = input;
-    currendFuseInput.addEventListener("input", AutoFillFieldChanged);
+    currendFuseInput.addEventListener("input", AutoFillFieldChangedEvent);
 }
 
-function AutoFillFieldChanged(event) {
+function AutoFillFieldChangedEvent(event) {
     var input = event.target;
+    AutoFillFieldChanged(input);
+}
+
+function AutoFillFieldChanged(input) {
     var id = input.getAttribute("id");
     var data = autoFillSource[input.getAttribute("id")];
     var tags = input.value.split(",");
@@ -1691,7 +1798,6 @@ function ConditionEdited(elem) {
     var order = openedConditionsOrder;
     var condition = order.item_conditions[openedConditionsIndex];
     var property = elem.getAttribute("property");
-    MarkEdited(order);
 
     if (property == "flags") {
         if (elem.value != "") {
@@ -1705,8 +1811,7 @@ function ConditionEdited(elem) {
         condition[property] = elem.value;
     }
 
-    if (config.toggleAutoSaveOrders)
-        QueueOrdersSave();
+    MarkEdited(order);
 }
 
 function ConditionEditHover(e) {
@@ -1749,17 +1854,20 @@ function CloseConditionEditor() {
     openedConditionsOrder = null;
 }
 
-function CreateNewOrder(orderToDuplicate = null) {
-    var myOrder;
-    if (orderToDuplicate = null) {
+function CreateNewOrder(fromJob = null, orderToDuplicate = null) {
+    var newOrder;
+    editedOrder = null;
+    editedOrderIsNew = true;
+
+    if (orderToDuplicate != null) {
         //clone current hover order
-        myOrder = JSON.parse(JSON.stringify(orderToDuplicate = null));
-        myOrder.isNew = true;
-        myOrder.edited = true;
-        myOrder.amount_left = myOrder.amount_total;
+        newOrder = JSON.parse(JSON.stringify(orderToDuplicate));
+        newOrder.isNew = true;
+        newOrder.edited = true;
+        newOrder.amount_left = newOrder.amount_total;
     } else {
-        myOrder = {
-            job: "",
+        newOrder = {
+            job: fromJob?.jobTypeName,
             amount_left: 10,
             amount_total: 10,
             material_category: [],
@@ -1771,9 +1879,11 @@ function CreateNewOrder(orderToDuplicate = null) {
             isNew: true,
             edited: true,
         }
+
+        SetupOrderFromJob(newOrder, fromJob)
     }
 
-    return myOrder;
+    return newOrder;
 }
 
 function AddNewOrder(newOrder, afterOrder = null) {
@@ -1791,9 +1901,8 @@ function AddNewOrder(newOrder, afterOrder = null) {
 
     MarkEdited(newOrder);
     UpdateOrdersTable();
+    return newOrder
 
-    if (config.toggleAutoSaveOrders)
-        QueueOrdersSave();
 
     //scroll to new order
     setTimeout(() => {
@@ -1809,6 +1918,11 @@ async function GetConfig() {
     var mustSave = false;
     if (config.selectedStocksMaterialsCols == undefined) {
         config.selectedStocksMaterialsCols = [];
+        mustSave = true;
+    }
+
+    if (config.minResourcesForSmelting == undefined) {
+        config.minResourcesForSmelting = 5;
         mustSave = true;
     }
 
@@ -1848,12 +1962,11 @@ async function ToggleOption(name, noSwitch = false) {
         return;
 
 
-    if (name == "toggleAutoReadOrders" && config.toggleAutoReadOrders) {
+    if (name == "toggleAutoReadOrders" && config.toggleAutoReadOrders)
         mustReadOrders = true
-    }
-    if (name == "toggleAutoSaveOrders" && config.toggleAutoSaveOrders) {
+
+    if (name == "toggleAutoSaveOrders" && config.toggleAutoSaveOrders)
         QueueOrdersSave(true);
-    }
 
     ApplyConfigClasses()
 }
@@ -1879,7 +1992,12 @@ function ToggleAutoRead() {
 
 
 
-function DeleteTask(order) {
+function DeleteOrder(order) {
+    order.deleted = false;
+    ToggleDeleteOrder(order);
+}
+
+function ToggleDeleteOrder(order, skipUpdate = false) {
     if (!order)
         return;
 
@@ -1895,26 +2013,43 @@ function DeleteTask(order) {
             order.deleted = true;
         }
     }
-    if (config.toggleAutoSaveOrders)
-        QueueOrdersSave();
-    UpdateOrdersTable();
+    MarkEdited(order);
+
+    if (!skipUpdate)
+        UpdateOrdersTable();
 }
 
 
-
 function SetTab(tab) {
-    displayedTab = tab;
-
+    /*
     $("body")[0].classList.remove("tab_inventoryOpened");
     $("body")[0].classList.remove("tab_ordersOpened");
+    $("body")[0].classList.remove("tab_smeltingOpened");
+    */
 
     switch (tab) {
         case "inventory":
-            $("body")[0].classList.add("tab_inventoryOpened");
+            if ($("body")[0].classList.contains("tab_inventoryOpened")) {
+                $("body")[0].classList.remove("tab_inventoryOpened");
+            } else {
+                $("body")[0].classList.add("tab_inventoryOpened");
+            }
             break;
 
-        default:
-            $("body")[0].classList.add("tab_ordersOpened");
+        case "orders":
+            if ($("body")[0].classList.contains("tab_ordersOpened")) {
+                $("body")[0].classList.remove("tab_ordersOpened");
+            } else {
+                $("body")[0].classList.add("tab_ordersOpened");
+            }
+            break;
+
+        case "smelting":
+            if ($("body")[0].classList.contains("tab_smeltingOpened")) {
+                $("body")[0].classList.remove("tab_smeltingOpened");
+            } else {
+                $("body")[0].classList.add("tab_smeltingOpened");
+            }
             break;
     }
 }
@@ -1956,12 +2091,16 @@ function CreateRowButton(classes, text, callback) {
 }
 
 
+function GetOrderMaterialName(order) {
+    return order.material ?? order.material_category?.toString() ?? "";
+}
+
 function GetOrderMaterialLabel(order) {
     var text = "";
-    if (order["material_category"] != null) {
-        text = order["material_category"].toString();
+    if (order.material_category != null) {
+        text = order.material_category.toString();
     } else {
-        text = order["material"] ?? "";
+        text = order.material ?? "";
     }
     text = text.toLocaleLowerCase();
     text = text.replace("native_", "");
@@ -1973,7 +2112,7 @@ function GetOrderMaterialLabel(order) {
 
 
 
-function ChangeWantedProduction(e) {
+function ChangeItemStockTarget(e) {
 
     var input = e.target;
     var qttDesired = parseInt(input.value);
@@ -1989,95 +2128,78 @@ function ChangeWantedProduction(e) {
         return;
     }
 
-    var matchingOrders = FindActiveOrdersForJob(job);
+    var matchingOrders = FindOrdersForJob(job);
 
     var ord;
     if (matchingOrders.length > 0) {
+
         ord = matchingOrders[0];
+
+        //delete extra orders
+        for (var i = 1; i < matchingOrders.length; i++) {
+            //remove other matching orders
+            DeleteOrder(matchingOrders[i]);
+        }
 
     } else {
         if (qttDesired <= 0)
             return;
 
-        ord = CreateNewOrder();
-        ord.job = job.jobTypeName;
-        var item = job.io?.out?.[0]?.item;
-        if (item && item.subtypeName)
-            ord.item_subtype = item.subtypeName;
-        ord.frequency = "Daily";
-        if (job.material_category)
-            ord.material_category = job.material_category;
-        if (job.material)
-            ord.material = job.material;
-
-        if (job.reactionName)
-            ord.reaction = job.reactionName;
-
+        ord = CreateNewOrder(job);
         AddNewOrder(ord);
     }
 
-    let min = Math.min(GetOrderBatchSize(), qttDesired);
-    ord.amount_total = min;
-    ord.amount_left = min;
-
-    ChangeDesiredOrderQuantity(ord, qttDesired, job);
+    SetOrderTargetQtt(ord, qttDesired);
 }
 
-function ChangeDesiredOrderQuantity(order, qttDesired, stockTask) {
 
-    if (qttDesired <= 0) {
-
-        DeleteTask(order);
-
-    } else {
-
-        if (stockTask) {
-
-            //stock goal: change the conditions for the order for when to stop producing
-            order.item_conditions = GetJobConditions(stockTask, qttDesired);
-
-        } else {
-
-            //direct quantity order : change the amount_total and amount_left
-            var oldQtt = order.amount_total;
-            order.amount_total = qttDesired;
-            var diff = qttDesired - oldQtt;
-            if (diff == 0)
-                return;
-            order.amount_left += diff;
-        }
-
-        var orderLine = ordersTable.querySelector(`div[orderId='${order.id}']`);
-        if (!orderLine)
-            return;
-
-        orderLine.querySelector(".property.amount_left .inputNumber").value = order.amount_left;
-        orderLine.querySelector(".property.amount_total .inputNumber").value = order.amount_total;
-        MarkEdited(order);
+function SetupOrderFromJob(order, job) {
+    if (job == null) {
+        Trace("SetupOrderFromJob: job is null");
+        return;
     }
-}
 
-function GetJobConditions(job, qttDesired) {
+    order.jobInfo = job;
+    order.job = job.jobTypeName;
 
-    //cl("Getting conditions for job: " + job.jobTypeName + " desired qtt: " + qttDesired);
+    if (job.material_category)
+        order.material_category = job.material_category;
 
-    var conditions = [];
+    if (job.material)
+        order.material = job.material;
+
+    if (job.reactionName)
+        order.reaction = job.reactionName;
+
+    if (job.jobTypeName == "PrepareMeal")
+        order.meal_ingredients = parseInt(job.mat_type);
+
+    if (job.item_typeName)
+        order.item_subtype = job.item_typeName;
+
+    /*
+    if (item && item.subtypeName)
+        newOrder.item_subtype = item.subtypeName;
+    */
+
+    order.item_conditions = [];
     job.io.in.forEach(inp => {
         var condition = {
             "condition": "GreaterThan",
-            "value": Math.min(GetOrderBatchSize(), qttDesired)
+            "value": 0
         }
 
         Object.keys(inp).forEach(key => {
             if (key == "item") {
                 var item = inp[key];
-                if (item.typeName)
-                    condition["item_type"] = item.typeName;
-                if (item.subtypeName)
-                    condition["item_subtype"] = item.subtypeName;
-                if (item.flags)
-                    condition["flags"] = item.flags;
-
+                if (item) {
+                    if (item.typeName)
+                        condition.item_type = SometimtesNoS(item.typeName);
+                    if (item.subtypeName)
+                        condition.item_subtype = item.subtypeName;
+                    if (item.flags)
+                        condition.flags = item.flags;
+                }
                 return;
             }
 
@@ -2088,7 +2210,10 @@ function GetJobConditions(job, qttDesired) {
             }
         });
 
-        conditions.push(condition);
+        if (itemWithDimensions[condition.item_type] > 0)
+            condition.min_dimension = itemWithDimensions[condition.item_type];
+
+        order.item_conditions.push(condition);
     });
 
     if (job.isCrafts) {
@@ -2096,45 +2221,65 @@ function GetJobConditions(job, qttDesired) {
             var condition = {
                 "condition": "LessThan",
                 "item_type": craftType.toUpperCase(),
-                "value": qttDesired,
+                "value": 0,
             }
             if (job.material)
-                condition["material"] = job.material;
+                condition.material = job.material;
             if (job.material_category && job.material_category.length > 0)
-                condition["material_category"] = job.material_category;
-            conditions.push(condition);
+                condition.material_category = job.material_category;
+            order.item_conditions.push(condition);
         });
     } else {
         job.io.out.forEach(outp => {
             var condition = {
                 "condition": "LessThan",
-                "value": qttDesired
+                "value": 0
             }
-            Object.keys(outp).forEach(key => {
-                if (key == "item") {
-                    var item = outp[key];
-                    if (item.typeName)
-                        condition["item_type"] = NoS(item.typeName.toUpperCase());
-                    if (item.subtypeName)
-                        condition["item_subtype"] = item.subtypeName;
-                    if (item.material)
-                        condition["material"] = item.material;
+            var item = outp.item;
+            if (item.typeName)
+                condition.item_type = SometimtesNoS(item.typeName);
 
-                    if (item.container_capacity > 0) {
-                        condition.flags ??= [];
-                        condition.flags.push("empty");
-                    }
+            //condition.item_type"] = NoS(item.typeName.toUpperCase());
+            if (item.subtypeName)
+                condition.item_subtype = item.subtypeName;
+            if (item.material) {
+                condition.material = item.material;
+            } else if (outp.material) {
+                condition.material = outp.material;
+            } else if (job.material) {
+                condition.material = job.material;
+            }
 
-                    return;
-                }
-            });
-            conditions.push(condition);
+            if (condition.item_type == "BLOCKS" && job.material_category?.includes("wood")) {
+                condition.flags ??= [];
+                condition.flags.push("plant");
+            }
+
+            if (item.container_capacity > 0) {
+                condition.flags ??= [];
+                condition.flags.push("empty");
+            }
+
+            //cl(condition)
+
+            order.item_conditions.push(condition);
         });
     }
 
-    //cl("Conditions generated: " + JSON.stringify(conditions, null, 2));
-    return conditions;
+
+    if (job.jobTypeName == "PrepareMeal") {
+        condition = {
+            "condition": "LessThan",
+            "item_type": "FOOD",
+            "value": 0,
+            "flags": ["unrotten"]
+        }
+        order.item_conditions.push(condition);
+    }
+
+    return order
 }
+
 
 function GetOrderBatchSize() {
     if (!config.orderBatchSize) {
@@ -2144,30 +2289,36 @@ function GetOrderBatchSize() {
     return config.orderBatchSize;
 }
 
-function FindActiveOrdersForJob(job) {
+function FindOrdersForJob(job) {
     if (!job)
         return [];
 
-    return orders.filter(order => {
-        if (order.job != job.jobTypeName)
+    return orders.filter(o => {
+        if (o.job != job.jobTypeName)
             return false;
 
-        if (job.item_subtype > -1 && (order.item_subtype ?? '') != (job.item_subtype ?? ''))
+        if ((o.reaction || '') != (job.reactionName || ''))
             return false;
 
-        if (order.material_category != null && order.material_category.length > 0) {
-            if (!job.material_category || job.material_category.length == 0 || (order.material_category[0] != job.material_category[0]))
+        if (job.item_subtype > -1 && (o.item_subtype ?? '') != (job.item_typeName ?? ''))
+            return false;
+
+        if (o.material_category != null && o.material_category.length > 0) {
+            if (!job.material_category || job.material_category.length == 0 || (o.material_category[0] != job.material_category[0]))
                 return false;
         }
 
-        if (order.material != null && order.material != job.material)
+        if (o.meal_ingredients > 0 && job.mat_type != o.meal_ingredients)
+            return false;
+
+        if (o.material != null && o.material != job.material)
             return false;
 
         return true;
     });
 }
 
-function CleanupDuplicateJobs() {
+function CleanupDuplicateOrders() {
     var totalMerges = 0;
     Object.values(orders).forEach(orderA => {
         if (orderA.deleted)
@@ -2195,7 +2346,7 @@ function CleanupDuplicateJobs() {
             targetCount += orderB.amount_total;
             leftCount += orderB.amount_left;
             totalMerges++;
-            DeleteTask(orderB);
+            ToggleDeleteOrder(orderB, true);
             mergeds.push(orderB.id)
         });
 
@@ -2219,33 +2370,83 @@ function CleanupDuplicateJobs() {
 }
 
 
-function StockEntryLabelGroup(fullName) {
-    let itemName = fullName.split("!").last();
+function StockEntryLabel(itemName) {
     var item = gm.items[itemName]
     if (!item) {
+        if (a.b.b.d)
+            cl("lol")
         cl("Unknown item: " + itemName);
-        return fullName;
+        return itemName;
     }
 
-    itemName = item.name.toUpperCase();
-    itemName = itemName.replace("ITEM_", "");
-    itemName = itemName.replace("WEAPON_", "");
-    itemName = itemName.replace("TOOL_", "");
-    itemName = itemName.replace("AMMO_", "");
-    itemName = itemName.replace("ARMOR_", "");
-    itemName = itemName.replace("HELM_", "");
-    itemName = itemName.replace("PANTS_", "");
-    itemName = itemName.replace("SHIELD_", "");
-    itemName = itemName.replace("SHOES_", "");
-    itemName = itemName.replace("SIEGEAMMO_", "");
-    itemName = itemName.replace(/_/g, " ");
-    itemName = itemName.charAt(0).toUpperCase() + itemName.slice(1).toLowerCase();
+    let labelName = itemName.split("!").last();
+    labelName = item.name.toUpperCase();
+    labelName = labelName.replace("ITEM_", "");
+    labelName = labelName.replace("WEAPON_", "");
+    labelName = labelName.replace("TOOL_", "");
+    labelName = labelName.replace("AMMO_", "");
+    labelName = labelName.replace("ARMOR_", "");
+    labelName = labelName.replace("HELM_", "");
+    labelName = labelName.replace("PANTS_", "");
+    labelName = labelName.replace("SHIELD_", "");
+    labelName = labelName.replace("SHOES_", "");
+    labelName = labelName.replace("SIEGEAMMO_", "");
+    labelName = labelName.replace(/_/g, " ");
+    labelName = labelName.charAt(0).toUpperCase() + labelName.slice(1).toLowerCase();
+
+    if (labelName == "Goblet")
+        labelName = "Goblet / Mug / Cup";
+
+    if (labelName == "Biscuits")
+        labelName = "Food (easy) / Biscuits";
+
+    if (labelName == "Stew")
+        labelName = "Food (fine) / Stew";
+
+    if (labelName == "Roast")
+        labelName = "Food (lavish) / Roast";
+
+    if (labelName == "Plant growth")
+        labelName = "Plant growth / Fruit";
+
+    if (labelName == "Box")
+        labelName = "Box / Chest / Coffers";
+
+    if (labelName == "Chair")
+        labelName = "Chair / Throne"
+
+    if (labelName == "Armorstand")
+        labelName = "Armor stand"
+
+    if (labelName == "Weaponrack")
+        labelName = "Weapon rack"
+
+    if (labelName == "Chain")
+        labelName = "Chain / Rope"
+
+    if (labelName == "Corpsepiece")
+        labelName = "Corpse part"
+
+    if (labelName == "Flask")
+        labelName = "Flask / Waterskin"
+
+    if (labelName == "Rough")
+        labelName = "Gem (rough)"
+
+    if (labelName == "Trapparts")
+        labelName = "Mechanism / Trap part"
+
+    if (labelName == "Trapparts")
+        labelName = "Mechanism / Trap part"
+
+    if (labelName == "Wood")
+        labelName = "Wood log"
 
     if (!item.isTypeOnly) {
         let groupName = ItemGroupName(item);
-        return (groupName != "" ? "<b>" + groupName + "</b>" : "") + itemName;
+        return (groupName != "" ? "<b>" + groupName + "</b>" : "") + labelName;
     } else {
-        return itemName;
+        return labelName;
     }
 
 }
@@ -2411,28 +2612,28 @@ function FinalizeStocksData() {
     var pool = GetStockPool();
 
     //manages cells flashing on stock changes
-    pool.forEach(stockItemName => {
-        if (!stockItemName)
+    pool.forEach(itemName => {
+        if (!itemName)
             return;
 
-        stock = stocks[stockItemName];
-        if (oldStocks[stockItemName] == null)
-            oldStocks[stockItemName] = {};
+        stock = stocks[itemName];
+        if (oldStocks[itemName] == null)
+            oldStocks[itemName] = {};
 
-        var stock = stocks[stockItemName] ?? [];
+        var stock = stocks[itemName] ?? [];
 
         var stockKeys = Object.keys(stock)
         if (stockKeys.length > 0) {
             stockKeys.forEach(mat => {
-                if (oldStocks[stockItemName][mat] == null)
-                    oldStocks[stockItemName][mat] = 0;
+                if (oldStocks[itemName][mat] == null)
+                    oldStocks[itemName][mat] = 0;
 
-                var diff = stock[mat] - oldStocks[stockItemName][mat];
+                var diff = stock[mat] - oldStocks[itemName][mat];
                 if (diff != 0) {
-                    StockCellChanged(stockItemName, mat, diff);
-                    itemMatStockChanges.push(stockItemName + "_" + mat);
+                    StockCellChanged(itemName, mat, diff);
+                    itemMatStockChanges.push(itemName + "_" + mat);
                 }
-                oldStocks[stockItemName][mat] = stock[mat];
+                oldStocks[itemName][mat] = stock[mat];
 
                 if (mat == "STONE")
                     mat = "INORGANIC"
@@ -2440,6 +2641,11 @@ function FinalizeStocksData() {
         }
     });
 
+    itemsWithCapacity = Object.values(gm.items).filter(i => i.container_capacity > 0).map(i => i.subtypeName);
+    itemsWithCapacity.push("BARREL");
+    itemsWithCapacity.push("BUCKET");
+    itemsWithCapacity.push("BAG");
+    itemsWithCapacity.push("BIN");
 }
 
 function ProcessStockLine(item, matsQtts) {
@@ -2473,46 +2679,57 @@ function FillStocksTable() {
     $(".inventoryTable")[0].style.display = "none"
 
     var itemsPool = GetStockPool();
-    itemsPool.forEach(stockItemName => {
-        UpdateStockItemLine(stockItemName);
+    itemsPool.forEach(itemName => {
+        item = gm.items[itemName];
+        if (!item) {
+            cl("Unknown stock item: " + itemName);
+            return;
+        }
+        UpdateStockItemLine(item);
     })
 
     $(".inventoryTable")[0].style.display = "flex"
 
     ApplyInventoryMaterialFilters();
     UpdateFavoriteItemsButtons();
+
+    CheckSmeltingJobs();
 }
 
-function UpdateStockItemLine(itemName) {
-    CreateStockCell(itemName, "ALL");
+function UpdateStockItemLine(item) {
+    CreateStockCell(item, "ALL");
 
     var mats = config.selectedStocksMaterialsCols;
-    mats.forEach(matName => {
-        CreateStockCell(itemName, matName);
+    mats.forEach(material => {
+        CreateStockCell(item, material);
     });
 }
 
 
-function CreateStockCell(stockEntry, material) {
+function CreateStockCell(item, material) {
     if (material == "")
         return;
-    if (stockEntry == "")
+
+    var itemName = GetItemTypeAndSubName(item);
+    if (itemName == "")
         return;
 
-    var totalStockWant = (stocks[stockEntry]?.["ALL"] > 0 ? 1 : 0) + GetWantedProduction(stockEntry, "ALL");
-    var buildable = itemHasJob[stockEntry] ? 1 : 0;
+    var totalStockWant = (stocks[itemName]?.["ALL"] > 0 ? 1 : 0) + GetWantedProduction(item, "ALL");
+    var buildable = itemHasJob[itemName] ? 1 : 0;
     //cl("Creating stock cell for " + stockEntry + " / " + material + " (totalWant: " + totalStockWant + ", buildable: " + buildable + ")");
 
     //side header
-    if (stockEntry == null || material == null || stockEntry == undefined)
+    if (itemName == null || material == null || itemName == undefined)
         console.log("QUOI LA BAISE!?");
 
-    var myLabel = stockCellsLabels[stockEntry];
+    var myLabel = stockCellsLabels[itemName];
     if (!myLabel) {
         myLabel = document.createElement("div");
         myLabel.classList.add("cell", "itemType", "gameButton");
-        myLabel.innerHTML = "<fav onclick='ToggleFavoriteItem(\"" + stockEntry + "\")'>★</fav>" + StockEntryLabelGroup(stockEntry);
-        myLabel.setAttribute("item", stockEntry.toUpperCase());
+        var label = StockEntryLabel(itemName);
+        myLabel.innerHTML = "<fav onclick='ToggleFavoriteItem(\"" + itemName + "\")'>★</fav>" + label;
+        myLabel.setAttribute("item", itemName.toUpperCase());
+        myLabel.setAttribute("itemLabel", label);
 
         /*
         let button = document.createElement("button");
@@ -2525,7 +2742,7 @@ function CreateStockCell(stockEntry, material) {
             ToggleDisplayedGraph(item);
         });
         */
-        stockCellsLabels[stockEntry] = myLabel;
+        stockCellsLabels[itemName] = myLabel;
         sideA.appendChild(myLabel);
     }
     myLabel.setAttribute("totalStockWant", totalStockWant)
@@ -2562,44 +2779,45 @@ function CreateStockCell(stockEntry, material) {
     }
     myMatCol.style.order = config.selectedStocksMaterialsCols.indexOf(material);
 
-    var matCell = stockCells[material + "_" + stockEntry];
+    var matCell = stockCells[material + "_" + itemName];
     if (!matCell) {
         matCell = document.createElement("div");
         matCell.classList.add("cell", "editable");
-        matCell.setAttribute("item", stockEntry);
+        matCell.setAttribute("item", itemName);
+        matCell.setAttribute("itemLabel", StockEntryLabel(itemName));
         var stockDiv = document.createElement("div");
         stockDiv.classList.add("stock");
         stockDiv.title = "Current stock quantity";
 
-        var key = stockEntry + "/" + (material == "STONE" ? "INORGANIC" : material);
+        var key = itemName + "/" + (material == "STONE" ? "INORGANIC" : material);
 
         if (!itemJob[key]) {
             //cl("Missing job for " + key);
         }
 
         matCell.classList.toggle("hasJob", false);
-        if (itemJob[key] && material != "ALL") {
+        if (itemJob[key]) {
             matCell.classList.toggle("hasJob", true);
             matCell.setAttribute("jobId", itemJob[key] != null ? itemJob[key].index : "")
-            AddInventoryCellInput(matCell, stockEntry, material, ChangeWantedProduction);
+            AddInventoryCellInput(matCell, itemName, material, ChangeItemStockTarget);
             myMatCol.classList.add("colHasJob");
             $(".cell.inventoryCol.header[material='" + material + "']")[0].classList.add("colHasJob");
         }
 
         matCell.appendChild(stockDiv);
         myMatCol.appendChild(matCell);
-        stockCells[material + "_" + stockEntry] = matCell;
+        stockCells[material + "_" + itemName] = matCell;
     }
 
     var input = matCell.querySelector("input.wanted");
     //update input value unless its being edited
     if (input && document.activeElement != input)
-        input.value = GetWantedProduction(stockEntry, material);
+        input.value = GetWantedProduction(item, material);
 
     var stocked = 0;
-    var wanted = GetWantedProduction(stockEntry, material);
-    if (stocks[stockEntry] && stocks[stockEntry][material])
-        stocked = stocks[stockEntry][material];
+    var wanted = GetWantedProduction(item, material);
+    if (stocks[itemName] && stocks[itemName][material])
+        stocked = stocks[itemName][material];
 
     matCell.setAttribute("stockWant", stocked + wanted);
     matCell.setAttribute("want", wanted);
@@ -2670,7 +2888,6 @@ function UpdateInventoryMaterialsPicker() {
     var materialOptions = GetDisplaybaleMaterialsPool();
 
     materialOptions.forEach(mat => {
-        mat = mat.replace(/'/g, "").replace(/ /g, "_");
         var option = pickerList.querySelector("button.materialOption[material='" + mat + "']");
         if (!option) {
             option = document.createElement("button");
@@ -2686,6 +2903,7 @@ function UpdateInventoryMaterialsPicker() {
             var labelDiv = document.createElement("div");
             labelDiv.classList.add("label");
             labelDiv.innerHTML = DisplayableMaterialName(mat, 1);
+            labelDiv.setAttribute("title", DisplayableMaterialName(mat, 3));
             labelPreDiv.appendChild(labelDiv);
 
             option.appendChild(labelPreDiv);
@@ -2794,38 +3012,46 @@ function ApplyInventoryMaterialFilters() {
 function SortStockCells() {
 
     var ordering = {};
+    var itemSortKey = {}
 
     var stockCells = $(".inventoryTable .cell.itemType[item]");
-    var cellsTexts = Array.from(stockCells).map(cell => { return cell.innerHTML.split("</b>").last(); });
-    cellsTexts.sort((a, b) => a.localeCompare(b));
-    var cellsHtmls = Array.from(stockCells).map(cell => { return cell.innerHTML; });
-    cellsHtmls.sort((a, b) => a.localeCompare(b));
+    var sortedKeys = Array.from(stockCells).map(cell => {
+        let sorter = ""
 
-    stockCells.forEach(cell => {
-        var itemIndex = 0;
-        var itemName = cell.getAttribute("item");
-        var noHtml = cell.innerHTML.split("</b>").last();
+        var fav = cell.classList.contains("favorite");
+        if (fav)
+            sorter += "000";
 
         if (config.toggleStockSorting) {
-            itemIndex = cellsHtmls.findIndex(obj => obj == cell.innerHTML)
-        } else {
-            itemIndex = cellsTexts.findIndex(obj => obj == noHtml)
+            var bold = cell.querySelector("b");
+            if (bold)
+                sorter += bold.innerHTML;
         }
 
-        var item = cell.getAttribute("item");
-        if (config.favoriteStockItems.indexOf(item) != -1)
-            itemIndex -= 10000;
+        sorter += CellLabelRaw(cell.innerHTML);
+        itemSortKey[cell.getAttribute("item")] = sorter;
+        return sorter;
+    });
+    sortedKeys.sort((a, b) => a.localeCompare(b));
 
+    var sortedCells = $(".inventoryTable .cell[item]");
+    sortedCells.forEach(cell => {
+        var itemIndex = 0;
+        var itemName = cell.getAttribute("item");
+
+        var itemName = cell.getAttribute("item");
+        var key = itemSortKey[itemName];
+        itemIndex = sortedKeys.indexOf(key);
         cell.style.order = itemIndex;
         ordering[itemName] = itemIndex;
     });
 
-    var stockCells = $(".inventoryTable .cell.editable[item]");
-    stockCells.forEach(cell => {
-        var itemName = cell.getAttribute("item");
-        cell.style.order = ordering[itemName];
-    });
 
+}
+
+function CellLabelRaw(label) {
+    //remove all html tags and their content
+    return label.replace(/<[^>]*>.*?<\/[^>]*>/g, '');
 }
 
 
@@ -2835,9 +3061,14 @@ function ClearMatName(mat) {
 
 
 function DisplayableMaterialName(mat, tagMode = 0) {
+    if (mat.endsWith("_PEWTER")) {
+        mat = mat.replace("_PEWTER", "");
+        mat = mat.replace(":", ":PEWTER_");
+    }
 
     var matString = mat;
 
+    matString = matString.replace("COAL:", "");
     matString = matString.replace("CREATURE:", "");
     matString = matString.replace("INORGANIC:", "");
     matString = matString.replace(":WOOD", "");
@@ -2871,6 +3102,9 @@ function DisplayableMaterialName(mat, tagMode = 0) {
         case 2:
             return matString.charAt(0).toUpperCase() + matString.slice(1).toLowerCase();
 
+        case 3:
+            types = GetMaterialTypes(mat);
+            return types.length > 0 ? types.join(", ") : ""
     }
 
     matString = matString.replace("ALL", "TOTAL");
@@ -2894,7 +3128,10 @@ function DisplayableMaterialName(mat, tagMode = 0) {
 
 function GetKiloValue(value) {
     value = parseInt(value);
-    value = value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    if (value > 9999) {
+        value = Math.floor(value / 1000);
+        return value + "K";
+    }
     return value;
 }
 
@@ -3009,14 +3246,22 @@ function EditOrder(order) {
     input.value = '';
     editedOrder = order;
 
-    if (order.foundJob) {
-        input.value = order.foundJob.name;
+    if (order.jobInfo) {
+        input.value = order.jobInfo.name;
         OrderEdited('job')
     }
     input.focus();
     $(".interpretedConditions")[0].innerHTML = "";
     $("#conditionCode")[0].value = "";
     $(".outputConditions")[0].innerHTML = "";
+
+    if (editedOrderIsNew) {
+        $(".orderEditor .buttons.newOrder")[0].classList.remove("hidden");
+        $(".orderEditor .buttons.oldOrder")[0].classList.add("hidden");
+    } else {
+        $(".orderEditor .buttons.newOrder")[0].classList.add("hidden");
+        $(".orderEditor .buttons.oldOrder")[0].classList.remove("hidden");
+    }
 
     input.dispatchEvent(new Event('change'));
 
@@ -3030,17 +3275,27 @@ function OrderEdited(tag) {
             job = jobs.find(j => j.name == jobName);
             if (job != null) {
                 $(".orderEditor #jobName")[0].classList.remove("error");
-                editedOrder.jobInfo = job;
-                editedOrder.job = job.jobTypeName;
+                editedOrder.item_conditions = SetupOrderFromJob(editedOrder, job);
+                delete editedOrder.material
+                delete editedOrder.material_category
 
-                cl(job);
+                //cl(job);
 
                 var code = "10\n";
 
                 if (job.io?.out?.length > 0) {
                     let item = job.io.out[0].item;
-                    if (item && item.container_capacity > 0)
-                        code = ":empty " + item.name + " " + code;
+                    var flags = job.io.out[0].flags ?? [];
+                    if (item && (itemsWithCapacity.includes(item.typeName) || itemsWithCapacity.includes(item.subtypeName) || item.container_capacity > 0))
+                        flags.push("empy");
+
+                    if (flags.length > 0) {
+                        var fs = ""
+                        flags.forEach(flag => {
+                            fs += ":" + flag + " ";
+                        });
+                        code = fs + GetItemSimpleName(item) + " < " + code;
+                    }
                 }
 
                 if (job.name.endsWith(" meal")) {
@@ -3056,11 +3311,13 @@ function OrderEdited(tag) {
                             }
                             var item = input.item;
                             if (item) {
-                                if (item.material || (item.material_category && item.material_category.length > 0))
-                                    code += "!" + (item.material ?? item.material_category[0]) + " ";
+                                var inMat = item.material ?? (item.material_category && item.material_category.length > 0 ? item.material_category[0] : null) ?? input.material;
+                                if (inMat)
+                                    code += "!" + inMat + " ";
 
-                                code += GetItemSubtypeOrType(item) + " >" + GetOrderBatchSize() + "\n"
+                                code += GetItemSubtypeOrType(item)
                             }
+                            code += " > " + GetOrderBatchSize() + "\n";
                         });
                     }
                 }
@@ -3105,13 +3362,13 @@ function OrderEdited(tag) {
                 if (line.trim() == "")
                     return;
 
+                var mat = "";
                 var codeLine = "";
                 var value = parseInt(line.trim());
                 var flags = [];
                 var operator = "";
                 let scriptOperator = "";
                 var itemSelected = null;
-
 
                 if (line.trim() == value.toString()) {
 
@@ -3125,14 +3382,13 @@ function OrderEdited(tag) {
 
                     if (itemSelected != null) {
                         scriptOperator = "LessThan";
-                        codeLine = "Stocks of <b>" + itemSelected.name + "</b> < <b>" + value + "</b>"
+                        mat = job.io?.out[0].material ?? job.material;
+                        codeLine = "Stocks of <b>" + (mat ? "(" + mat + ") " : "") + itemSelected.name + "</b> < <b>" + value + "</b>"
                     } else {
                         codeLine = "<u>[Job's produced item not found]</u>";
                     }
 
                 } else {
-
-                    var mat = "";
                     if (line.includes("!"))
                         mat = line.split("!")[1].split(" ")[0].trim();
                     line = line.replace("!" + mat, "");
@@ -3265,18 +3521,16 @@ function OrderEdited(tag) {
                 }
 
                 if (mat != "")
-                    condition["material"] = mat;
+                    condition.material = mat;
 
-                if (itemSelected) {
-                    if (itemSelected.typeName)
-                        condition["item_type"] = NoS(itemSelected.typeName.toUpperCase());
+                if (itemSelected)
+                    condition.item_type = GetItemSimpleName(itemSelected);
 
-                    if (itemSelected.subtypeName)
-                        condition["item_subtype"] = itemSelected.subtypeName.toUpperCase();
-                }
+                if (itemWithDimensions[condition.item_type] > 0)
+                    condition.min_dimension = itemWithDimensions[condition.item_type];
 
                 if (flags.length > 0) {
-                    condition["flags"] = flags;
+                    condition.flags = flags;
                 }
 
                 inter.innerHTML += codeLine + "<br/>";
@@ -3292,45 +3546,45 @@ function OrderEdited(tag) {
                         editedOrder.meal_ingredients = 2;
                     }
                 }
+
+                if (job.reactionName)
+                    editedOrder.reaction = job.reactionName;
             });
 
-            out.textContent = JSON.stringify(editedOrder.item_conditions, null, 2);
+            out.textContent = JSON.stringify(CloneOrdersNoDom(editedOrder), null, 2);
             break;
     }
 
 }
 
-function CloseOrderEditor() {
-    $(".orderEditor")[0].classList.add("hidden");
-    editedOrder = null;
-}
-
 function GetWantedProduction(item, mat) {
-    if (!mat)
+    if (!item) {
+        cl("GetWantedProduction called with no item!");
         return 0;
+    }
+    if (!mat) {
+        cl("GetWantedProduction called with no material!");
+        return 0;
+    }
 
-    var key = item + "/" + mat;
+    mat = mat.toUpperCase()
+    if (mat == "STONE")
+        mat = "INORGANIC"
+
+    var key = GetItemTypeAndSubName(item) + "/" + (mat ?? "ALL");
     var job = itemJob[key];
     if (!job)
         return 0;
 
-    let myOrders = FindActiveOrdersForJob(job);
+    let myOrders = FindOrdersForJob(job);
     if (myOrders.length == 0)
         return 0;
 
     //cl("Wanted production for " + item + " / " + mat + " is " + myOrders[0].amount_total);
 
-    var outItem = job.io?.out?.[0];
-    if (outItem) {
-        var prodCondition = myOrders[0].item_conditions?.find(cond => {
-            var a = (cond.item_type ?? "") + "!" + (cond.item_subtype ?? "");
-            var b = (outItem.item.typeName ?? "") + "!" + (outItem.item.subtypeName ?? "");
-            return a == b;
-        });
-
-        if (prodCondition)
-            return prodCondition.value;
-    }
+    var prodCondition = GetOrderOutputItemCondition(myOrders[0]);
+    if (prodCondition)
+        return prodCondition.value;
 
     return myOrders[0].amount_total;
 }
@@ -3376,7 +3630,7 @@ function OnGeneralKeyDown(e) {
     if ($(".orderEditor:not(.hidden)")[0])
         return;
 
-    if (!IsCtrlPressed()) {
+    if (!IsCtrlPressed() && !IsShiftPressed() && e.key.match("^[a-zA-Z]$")) {
         var autoFocusables = $("input.autofocus");
         autoFocusables = Array.from(autoFocusables);
 
@@ -3413,8 +3667,8 @@ function OnGeneralKeyUp(e) {
         return;
     }
 
-    if ($(".orderEditor:not(.hidden)")[0]) {
-        if (e.key == "Enter" && (IsShiftPressed() || IsCtrlPressed())) {
+    if (e.key == "Enter" && (IsShiftPressed() || IsCtrlPressed())) {
+        if ($(".orderEditor:not(.hidden)")[0]) {
             e.preventDefault();
             $("#jobName")[0].blur();
             if (IsShiftPressed()) {
@@ -3422,9 +3676,36 @@ function OnGeneralKeyUp(e) {
             } else if (IsCtrlPressed()) {
                 SaveDailyOrder();
             }
+        } else {
+            EditOrder(CreateNewOrder());
+            var orderIn = $(".orderEditor #jobName")[0]
+            $(".orderEditor #jobName")[0].value = $("#generalFilter")[0].value;
+
+            $("#generalFilter")[0].value = "";
+            var event = new Event('change');
+            $("#generalFilter")[0].dispatchEvent(event);
+
+            SetAutoFill(orderIn, jobSortedNames)
+            AutoFillFieldChanged(orderIn);
+            OrderEdited('job')
+            CloseAutoFill(orderIn);
         }
         KeyUpEnd(e);
         return;
+    }
+
+
+    //space
+    if (key == " ") {
+        if (currentHoverOrder) {
+            if (double) {
+                e.preventDefault();
+                OrderToolStopAllAfter();
+            } else {
+                e.preventDefault();
+                OrderToolStopMe();
+            }
+        }
     }
 
 
@@ -3492,7 +3773,7 @@ function OnGeneralKeyUp(e) {
 
         if (key == "f") {
             e.preventDefault();
-            CleanupDuplicateJobs()
+            CleanupDuplicateOrders()
         }
 
 
@@ -3512,17 +3793,16 @@ function OnGeneralKeyUp(e) {
         if (key == "x") {
             //delete
             e.preventDefault();
-            if ($(".inventoryMaterialsPickerHost:not(.hidden)")[0]) {
+
+            if (document.querySelector(".inventoryMaterialsPickerHost:not(.hidden)") != null) {
                 ClearStocksMaterialsFilter();
-            } else {
-                DeleteTask(currentHoverOrder);
+            } else if (currentHoverOrder) {
+                ToggleDeleteOrder(currentHoverOrder)
             }
         }
 
         if (key == "c") {
-            //create
-            e.preventDefault();
-            EditOrder(CreateNewOrder());
+            //free
         }
 
         if (key == "v") {
@@ -3536,36 +3816,41 @@ function OnGeneralKeyUp(e) {
         }
 
 
-        //space
-        if (key == " ") {
-            if (currentHoverOrder) {
-                if (double) {
-                    e.preventDefault();
-                    OrderToolStopAllAfter();
-                } else {
-                    e.preventDefault();
-                    OrderToolStopMe();
-                }
-            }
+        if (key == "1" || key == "&") {
+            e.preventDefault();
+            SetTab("inventory");
         }
 
+        if (key == "2" || key == "é") {
+            e.preventDefault();
+            SetTab("orders");
+        }
+
+        if (key == "3" || key == "\"") {
+            e.preventDefault();
+            SetTab("smelting");
+        }
+
+        if (key == "l") {
+            //L not 1
+            e.preventDefault();
+            ToggleOption('HideLogs')
+        }
+
+
+
+        /*
         if (key == "tab") {
             e.preventDefault();
             if (displayedTab == "inventory") {
                 SetTab("orders");
+            } else if (displayedTab == "orders") {
+                SetTab("smelting");
             } else {
                 SetTab("inventory");
             }
         }
-
-        if (key == "1" || key == "&") {
-            e.preventDefault();
-            ClearStocksMaterialsFilter();
-        }
-        if (key == "2" || key == "é") {
-            e.preventDefault();
-            ToggleOption('HideLogs')
-        }
+        */
 
         e.stopPropagation();
     }
@@ -3574,21 +3859,34 @@ function OnGeneralKeyUp(e) {
 
 
 function SaveSimpleOrder() {
-    delete editedOrder.item_conditions;
-    editedOrder.frequency = "OneTime";
-    AddNewOrder(editedOrder);
+    if (editedOrderIsNew) {
+        delete editedOrder.item_conditions;
+        editedOrder.frequency = "OneTime";
+        AddNewOrder(editedOrder);
+    } else {
+        MarkEdited(editedOrder);
+    }
 
-    document.activeElement.blur();
     CloseOrderEditor();
 }
 
 function SaveDailyOrder() {
-    editedOrder.frequency = "Daily";
-    AddNewOrder(editedOrder);
+    if (editedOrderIsNew) {
+        editedOrder.frequency = "Daily";
+        AddNewOrder(editedOrder);
+    } else {
+        MarkEdited(editedOrder);
+    }
 
-    document.activeElement.blur();
     CloseOrderEditor();
 }
+
+function CloseOrderEditor() {
+    editedOrderIsNew = false;
+    document.activeElement.blur();
+    $(".orderEditor")[0].classList.add("hidden");
+}
+
 
 function KeyUpEnd(e) {
     keysDown = keysDown.filter(k => k != e.key);
@@ -3624,14 +3922,25 @@ function CompareDepth(a, b) {
     }
 }
 
-function PopInfo(title, message, sub, buttons = null, closeCallback = null, waitingToken = "") {
+function PopInfo(title, message, sub, buttons = null, closeCallback = null, waitingToken = "", icon = null) {
+
+    var newPop = title + message + sub + buttons?.join(",");
+    if (newPop == lastPopData && document.querySelector(".infoBox") != null)
+        return;
+    lastPopData = newPop;
 
     var infoBox = document.createElement("div");
     infoBox.classList.add("infoBox");
     infoBox.innerHTML = `<div class='window'><div class='title'></div><div class='context'></div><div class='message'></div><div class='buttons'></div></div>`;
     infoBox.setAttribute("waitingToken", waitingToken);
     infoBox.querySelector(".title").textContent = title;
-    infoBox.querySelector(".message").innerHTML = message;
+    if (icon) {
+        infoBox.querySelector(".message").innerHTML = "<div class='withIcon'><img src='" + icon + "'> <div>" + message + "</div></div>";
+    } else {
+        infoBox.querySelector(".message").innerHTML = message;
+    }
+
+    infoBox.querySelector(".context").innerHTML = sub;
 
     if (buttons) {
         buttons.forEach(btn => {
@@ -3675,18 +3984,20 @@ function PopInfo(title, message, sub, buttons = null, closeCallback = null, wait
             infoBox.querySelector(".buttons").appendChild(button);
         });
     }
-    infoBox.querySelector(".context").innerHTML = sub;
+
     $("body")[0].appendChild(infoBox);
 
-    setTimeout(() => {
-        infoBox.addEventListener("click", () => {
-            const box = infoBox;
-            //remove infobox
-            box.remove();
-            if (closeCallback)
-                closeCallback();
-        });
-    }, 500);
+    if (buttons != null) {
+        setTimeout(() => {
+            infoBox.addEventListener("click", () => {
+                const box = infoBox;
+                //remove infobox
+                box.remove();
+                if (closeCallback)
+                    closeCallback();
+            });
+        }, 500);
+    }
 }
 
 function PopInfoActive() {
@@ -3745,17 +4056,26 @@ function Trace(msg) {
 }
 
 function Toast(msg) {
-    var pop = document.createElement("div");
-    pop.classList.add("toastActivity");
-    pop.innerHTML = msg;
+
+    if (msg == "") {
+        $(".toasts")[0].innerHTML = "";
+        clearTimeout(lastToastRemoval);
+    }
 
     var firstChild = $(".toasts")[0].firstChild;
-    $(".toasts")[0].insertBefore(pop, firstChild);
 
-    if (firstChild.textContent == msg)
-        firstChild.remove();
+    if (firstChild?.innerHTML == msg) {
+        clearTimeout(lastToastRemoval);
+        firstChild.classList.remove("repeat");
+        firstChild.classList.add("repeat");
+    } else {
+        var pop = document.createElement("div");
+        pop.classList.add("toastActivity");
+        pop.innerHTML = msg;
+        $(".toasts")[0].insertBefore(pop, firstChild);
+    }
 
-    setTimeout(() => {
+    lastToastRemoval = setTimeout(() => {
         const p = pop;
         if (p?.parentElement)
             p.parentElement.removeChild(p);
@@ -3823,7 +4143,7 @@ if (!Array.prototype.last) {
 
 function FindJobWith(name) {
     var low = name.toLocaleLowerCase();
-    return jobs.filter(j => j.name.toLocaleLowerCase().includes(low))
+    return jobs.filter(j => j.name.toLocaleLowerCase().includes(low) || j.jobTypeName.toLocaleLowerCase().includes(low));
 }
 
 function FindStocksWith(name) {
@@ -3844,23 +4164,17 @@ function CraftableMaterialName(mat) {
     return mat;
 }
 
-
-function CompleteJobInfos(job) {
-    job.jobTypeName = gm.job_type[job.jobType];
-    job.isCrafts = job.name.includes(" crafts");
-
-    //determine item type and subtype
-    GuessJobItem(job);
-
-    //associate item & job
-    GuessJobItemAssociation(job);
-}
-
 function GetJobMaterial(job) {
     return job.material || job.material_category?.[0] || job.io?.in?.[0]?.material || "";
 }
 
-function GuessJobItem(job) {
+
+function CompleteJobInfos(job) {
+    //determine job item type, subtype, material...
+
+    job.jobTypeName = gm.job_type[job.jobType];
+    job.isCrafts = job.name.includes(" crafts");
+
     var seekNameUp = GetMaterialNameFromIndex(job.mat_index);
     job.material = seekNameUp ? seekNameUp : "";
 
@@ -3874,16 +4188,18 @@ function GuessJobItem(job) {
             var first = true;
             job.reaction.products.forEach(p => {
                 if (p.item_type > -1) {
-                    let item = gm.items[p.item_type];
+                    let item = gm.items[gm.item_types[p.item_type]];
+
+                    if (job.reactionName.endsWith("_COKE"))
+                        job.material = "COAL:COKE";
+
                     job.io.out.push({
                         "item": item,
-                        "materialName": job.material,
+                        "material": job.material,
                         "material_index": job.mat_index,
                         "count": p.count ? p.count : 1
                     });
                     if (first && item) {
-                        if (item.subtypeName == "ITM_TOOL_STONE_AXE")
-                            cl("prout1");
                         job.item_typeName = item.subtypeName;
                         first = false;
                     }
@@ -3897,11 +4213,11 @@ function GuessJobItem(job) {
                 r.material = GetMaterialNameFromIndex(r.mat_index);
                 let item = null;
                 if (r.item_type > -1)
-                    item = gm.items[r.item_type];
+                    item = gm.items[gm.item_types[r.item_type]];
 
                 job.io.in.push({
                     "item": item,
-                    "materialName": r.material,
+                    "material": r.material,
                     "material_index": r.mat_index,
                     "count": r.count ? r.count : 1,
                     "flags": r.flags,
@@ -3917,7 +4233,7 @@ function GuessJobItem(job) {
         //create job output
 
         var jn = job.name;
-        var parts = jn.toUpperCase().split(" ");
+        var jtn = job.jobTypeName;
 
         var newOut = {
             item: null,
@@ -3928,149 +4244,311 @@ function GuessJobItem(job) {
             quantity: 1,
         };
 
-        while (parts.length > 0 && newOut.item == null) {
-            var itm = parts.join(" ").toLowerCase();
-            if (itm == "")
-                continue;
+        (function () {
 
-            newOut.item = FindItemBySubtype(itm) ?? FindItemByName(itm) ?? FindItem(itm);
-            parts.shift(1)
-        }
+            if (jtn == "ConstructChest") {
+                newOut.item = gm.items["BOX"];
+                return;
+            }
 
-        if (jn == "Weave thread into silk") {
-            newOut.item = gm.items["CLOTH"];
-            newOut.material_category = ["SILK"];
+            if (jtn == "PrepareMeal") {
+                switch (job.mat_type) {
+                    case "2":
+                        key = "FOOD!ITEM_FOOD_BISCUITS/ALL";
+                        itemJob[key] = job;
+                        itemHasJob["FOOD!ITEM_FOOD_BISCUITS"] = true;
+                        newOut.item = gm.items["FOOD!ITEM_FOOD_BISCUITS"];
+                        return;
+                    case "3":
+                        key = "FOOD!ITEM_FOOD_STEW/ALL";
+                        itemJob[key] = job;
+                        itemHasJob["FOOD!ITEM_FOOD_STEW"] = true;
+                        newOut.item = gm.items["FOOD!ITEM_FOOD_STEW"];
+                        return;
+                    case "4":
+                        key = "FOOD!ITEM_FOOD_ROAST/ALL";
+                        itemJob[key] = job;
+                        itemHasJob["FOOD!ITEM_FOOD_ROAST"] = true;
+                        newOut.item = gm.items["FOOD!ITEM_FOOD_ROAST"];
+                        return;
+                }
+            }
 
-            newIn.item = gm.items["THREAD"];
-            newIn.flags = ["collected", "silk"];
-        } else if (jn.indexOf(" mugs") > -1 || jn.indexOf(" cups") > -1 || jn.indexOf(" goblets") > -1) {
-            newOut.item = gm.items["GOBLET"];
-        }
+            if (jn == "Weave thread into cloth") {
+                newIn.item = gm.items["THREAD"];
+                newIn.flags = ["collected", "plant"];
 
-        if (newOut.item == null) {
-            //get item by name
+                newOut.item = gm.items["CLOTH"];
+
+                job.material = ""
+                job.material_category = ["plant"];
+                return;
+            }
+
+            if (jn == "Weave thread into silk") {
+                newIn.item = gm.items["THREAD"];
+                newIn.flags = ["collected", "silk"];
+
+                newOut.item = gm.items["CLOTH"];
+
+                job.material = ""
+                job.material_category = ["silk"];
+                return;
+            }
+
+            if (jn == "Weave yarn into cloth") {
+                newIn.item = gm.items["THREAD"];
+                newIn.flags = ["collected", "yarn"];
+
+                newOut.item = gm.items["CLOTH"];
+
+                job.material = ""
+                job.material_category = ["yarn"];
+                return;
+            }
+
+            if (jn == "Make bolt thrower parts") {
+                newIn.item = gm.items["WOOD"];
+
+                newOut.item = gm.items["BOLT_THROWER_PARTS"];
+                newOut.material_category = ["wood"];
+                job.material_category = ["wood"];
+                return;
+            }
+
+            if (jn == "Make adamantine bolt thrower parts") {
+                newIn.item = gm.items["BAR"];
+                newIn.material = "INORGANIC:ADAMANTINE";
+
+                newOut.item = gm.items["BOLT_THROWER_PARTS"];
+                newOut.material = "INORGANIC:ADAMANTINE";
+                job.material = "INORGANIC:ADAMANTINE";
+                return;
+            }
+
+            if (jn.endsWith("bolts")) {
+                newOut.item = gm.items["AMMO!ITEM_AMMO_BOLTS"];
+                return;
+            }
+
+            if (jn.endsWith(" blocks")) {
+                newOut.item = gm.items["BLOCKS"];
+                newOut.flags = ["plant"]
+                return;
+            }
+
+            if (jn.indexOf(" mugs") > -1 || jn.indexOf(" cups") > -1 || jn.indexOf(" goblets") > -1) {
+                newOut.item = gm.items["GOBLET"];
+                return;
+            }
+
+            if (jn == "Make charcoal") {
+                newIn.item = gm.items["WOOD"];
+                newOut.item = gm.items["BAR"];
+                newOut.material = "COAL:CHARCOAL";
+                job.material = "COAL:CHARCOAL";
+                return;
+            }
 
             var jnl = job.name.toLowerCase();
-            if (jnl.includes(" throne ") || jnl.includes(" chair "))
+
+
+            if (jnl.includes(" throne ") || jnl.includes(" chair ")) {
                 newOut.item = gm.items["CHAIR"];
+                return;
+            }
 
-            if (jnl.includes(" barrel "))
+            if (jnl.includes(" barrel ")) {
                 newOut.item = gm.items["BARREL"];
+                return;
+            }
 
-            if (jnl == "make bed")
+            if (jnl == "make bed") {
                 newOut.item = gm.items["BED"];
+                return;
+            }
 
-            if (jnl.includes(" chain"))
+            if (jnl.includes(" chain")) {
                 newOut.item = gm.items["CHAIN"];
+                return;
+            }
 
-            if (jnl.includes(" quiver"))
+
+            if (jnl.includes(" quiver")) {
                 newOut.item = gm.items["QUIVER"];
+                return;
+            }
 
-            if (jnl.includes(" weapon rack"))
+            if (jnl.includes(" weapon rack")) {
                 newOut.item = gm.items["WEAPONRACK"];
+                return;
+            }
 
-            if (jnl.includes(" armor stand"))
+            if (jnl.includes(" armor stand")) {
                 newOut.item = gm.items["ARMORSTAND"];
+                return;
+            }
 
-            if (jnl.includes(" bucket"))
+            if (jnl.includes(" bucket")) {
                 newOut.item = gm.items["BUCKET"];
+                return;
+            }
 
-            if (jnl.includes(" pipe section"))
+            if (jnl.includes(" pipe section")) {
                 newOut.item = gm.items["PIPE_SECTION"];
+                return;
+            }
 
-            if (jnl.includes(" anvil"))
+            if (jnl.includes(" anvil")) {
                 newOut.item = gm.items["ANVIL"];
+                return;
+            }
 
-            if (jnl.includes(" wheelbarrow"))
+            if (jnl.includes(" wheelbarrow")) {
                 newOut.item = gm.items["ITEM_TOOL_WHEELBARROW"];
+                return;
+            }
 
-            if (jnl.includes(" casket"))
+            if (jnl.includes(" casket")) {
                 newOut.item = gm.items["COFFIN"];
-            if (jnl.includes(" sarcophagus"))
-                newOut.item = gm.items["COFFIN"];
+                return;
+            }
 
-            if (jnl.includes(" hatch cover"))
+            if (jnl.includes(" sarcophagus")) {
+                newOut.item = gm.items["COFFIN"];
+                return;
+            }
+
+            if (jnl.includes(" hatch cover")) {
                 newOut.item = gm.items["HATCH_COVER"];
+                return;
+            }
 
-            if (jnl.includes(" rope"))
+            if (jnl.includes(" rope")) {
                 newOut.item = gm.items["CHAIN"];
+                return;
+            }
 
-            if (jnl.includes(" traction bench"))
+            if (jnl.includes(" traction bench")) {
                 newOut.item = gm.items["TRACTION_BENCH"];
+                return;
+            }
 
-            if (jnl.includes(" animal trap"))
+            if (jnl.includes(" animal trap")) {
                 newOut.item = gm.items["ANIMALTRAP"];
+                return;
+            }
 
-            if (jnl.includes(" bolts"))
+            if (jnl.includes(" bolts")) {
                 newOut.item = gm.items["ITEM_AMMO_BOLTS"];
+                return;
+            }
 
-            if (jnl.includes(" ballista arrow head"))
+            if (jnl.includes(" ballista arrow head")) {
                 newOut.item = gm.items["BALLISTAARROWHEAD"];
+                return;
+            }
 
             if (jnl.includes(" ballista parts")) {
                 newOut.item = gm.items["BALLISTAPARTS"];
                 job.material_category = ["WOOD"]
+                return;
             }
+
             if (jnl.includes(" catapult parts")) {
                 newOut.item = gm.items["CATAPULTPARTS"];
                 job.material_category = ["WOOD"]
+                return;
             }
+
             if (jnl.includes(" bolt thrower parts")) {
                 newOut.item = gm.items["BOLT_THROWER_PARTS"];
                 job.material_category = ["WOOD"]
+                return;
             }
 
             if (jnl.endsWith(" ash")) {
                 newOut.item = gm.items["BAR"];
                 job.material = "ASH";
+                return;
             }
-            if (jnl.endsWith(" charcoal")) {
-                newOut.item = gm.items["BAR"];
-                job.material = "COAL:CHARCOAL";
-            }
+
             if (jnl.includes(" potash ")) {
                 newOut.item = gm.items["BAR"];
                 job.material = "POTASH";
+                return;
             }
+
             if (jnl.endsWith(" lye")) {
                 newOut.item = gm.items["BAR"];
                 job.material = "LYE";
+                return;
             }
 
             if (jnl == "make raw clear glass") {
                 newOut.item = gm.items["ROUGH"];
                 job.material = "GLASS_CLEAR"
-            } else if (jnl == "make raw green glass") {
-                newOut.item = gm.items["ROUGH"];
-                job.material = "GLASS_GREEN"
-            } else if (jnl == "make raw crystal glass") {
-                newOut.item = gm.items["ROUGH"];
-                job.material = "GLASS_CRYSTAL";
+                return;
             }
 
-            if (jnl.endsWith(" portal"))
+            if (jnl == "make raw green glass") {
+                newOut.item = gm.items["ROUGH"];
+                job.material = "GLASS_GREEN"
+                return;
+            }
+
+            if (jnl == "make raw crystal glass") {
+                newOut.item = gm.items["ROUGH"];
+                job.material = "GLASS_CRYSTAL";
+                return;
+            }
+
+            if (jnl.endsWith(" portal")) {
                 newOut.item = gm.items["DOOR"];
+                return;
+            }
 
-            if (jnl.endsWith(" terrarium"))
+            if (jnl.endsWith(" terrarium")) {
                 newOut.item = gm.items["CAGE"];
+                return;
+            }
 
-            if (jnl.endsWith(" tube"))
+            if (jnl.endsWith(" tube")) {
                 newOut.item = gm.items["PIPE_SECTION"];
+                return;
+            }
 
-            if (jnl.endsWith(" vial"))
+            if (jnl.endsWith(" vial")) {
                 newOut.item = gm.items["FLASK"];
-            if (jnl.endsWith(" waterskin"))
-                newOut.item = gm.items["FLASK"];
+                return;
+            }
 
-            if (jnl.endsWith(" mug") || jnl.endsWith(" mugs"))
+            if (jnl.endsWith(" waterskin")) {
+                newOut.item = gm.items["FLASK"];
+                return;
+            }
+
+
+            if (jnl.endsWith(" mug") || jnl.endsWith(" mugs")) {
                 newOut.item = gm.items["GOBLET"];
-            if (jnl.endsWith(" cup") || jnl.endsWith(" cups"))
-                newOut.item = gm.items["GOBLET"];
+                return;
+            }
 
-            if (jnl.endsWith(" vial") || jnl.endsWith(" vials"))
+            if (jnl.endsWith(" cup") || jnl.endsWith(" cups")) {
+                newOut.item = gm.items["GOBLET"];
+                return;
+            }
+
+
+            if (jnl.endsWith(" vial") || jnl.endsWith(" vials")) {
                 newOut.item = gm.items["FLASK"];
-            if (jnl.endsWith(" waterskin") || jnl.endsWith(" waterskins"))
+                return;
+            }
+
+            if (jnl.endsWith(" waterskin") || jnl.endsWith(" waterskins")) {
                 newOut.item = gm.items["FLASK"];
+                return;
+            }
 
             if (job.name.startsWith("Make wooden training")) {
                 var weapon = job.name.split(" ").last();
@@ -4085,12 +4563,26 @@ function GuessJobItem(job) {
                         newOut.item = gm.items["ITEM_WEAPON_MACE_TRAINING"];
                         break;
                 }
+                return;
+            }
+
+            var parts = jn.toUpperCase().split(" ");
+            while (parts.length > 0 && newOut.item == null) {
+                var itm = parts.join(" ").toLowerCase();
+                if (itm == "")
+                    continue;
+
+                newOut.item = FindItemBySubtype(itm) ?? FindItemByName(itm) ?? FindItem(itm);
+                if (newOut.item != null)
+                    return;
+
+                parts.shift(1)
             }
 
             if (newOut.item == null) {
                 switch (job.jobTypeName) {
                     case "PrepareMeal":
-                        newOut.item = gm.items["FOOD"];
+                        newOut.itemType = gm.items["FOOD"];
                         newIn.flags = ["unrotten", "cookable", "solid"];
                         break;
                     case "ConstructChest":
@@ -4129,77 +4621,76 @@ function GuessJobItem(job) {
                         break;
                 }
             }
-        }
-
+        })();
 
 
         //create job inputs
-        newIn.material = job.material;
-        var materialType = gm.materials[job.material]?.Types[0];
-        switch (materialType) {
-            case "STONE":
-                newIn.item = gm.items["BOULDER"];
-                break;
-            case "METAL":
-                newIn.item = gm.items["BAR"];
-                break;
-            case "GEM":
-                newIn.item = gm.items["SMALLGEM"];
-                break;
-            case "COAL":
-                newIn.item = gm.items["BAR"];
-                break;
-            case "WOOD":
-                newIn.item = gm.items["WOOD"];
-                break;
-            case "LEATHER":
-                newIn.item = gm.items["SKIN_TANNED"];
-                break;
-            case "GLASS":
-                newIn.item = gm.items["ROUGH"];
-                break;
-            case "BONE":
-                newIn = {
-                    "flags":
-                        [
-                            "unrotten",
-                            "bone",
-                            "body_part"
-                        ]
-                };
-                break;
-
-            default:
-                if (job.name.includes(" wooden ")) {
-                    newIn.item = gm.items["WOOD"];
-
-                } else if (job.name.includes(" rock ")) {
-                    newIn.material = "INORGANIC";
+        if (!newIn.item) {
+            newIn.material = job.material;
+            var materialType = gm.materials[job.material]?.Types[0] ?? job.material_category?.[0]?.toUpperCase() ?? "";
+            switch (materialType) {
+                case "STONE":
                     newIn.item = gm.items["BOULDER"];
-                    newIn.flags = ["hard", "non_economic"];
-
-                } else if (job.name.includes(" leather")) {
-                    newIn.item = gm.items['SKIN_TANNED'];
-
-                } else if (job.name.includes(" silk")) {
-                    newIn.flags = ['silk'];
-                    newIn.item = gm.items["CLOTH"];
-                    newIn.min_dimension = 10000;
-
-                } else if (job.name.includes(" yarn")) {
-                    newIn.flags = ['yarn'];
-                    newIn.item = gm.items["CLOTH"];
-                    newIn.min_dimension = 10000;
-
-                } else if (job.name.includes(" cloth")) {
-                    newIn.flags = ['plant'];
-                    newIn.item = gm.items["CLOTH"];
-                    newIn.min_dimension = 10000;
-
-                } else if (job.name == "Make bed") {
+                    break;
+                case "METAL":
+                    newIn.item = gm.items["BAR"];
+                    break;
+                case "GEM":
+                    newIn.item = gm.items["SMALLGEM"];
+                    break;
+                //case "COAL":
+                case "FUEL":
+                    newIn.item = gm.items["BAR"];
+                    break;
+                case "WOOD":
                     newIn.item = gm.items["WOOD"];
-                }
-                break;
+                    break;
+                case "LEATHER":
+                    newIn.item = gm.items["SKIN_TANNED"];
+                    break;
+                case "GLASS":
+                    newIn.item = gm.items["ROUGH"];
+                    break;
+                case "BONE":
+                    newIn = {
+                        "flags":
+                            [
+                                "unrotten",
+                                "bone",
+                                "body_part"
+                            ]
+                    };
+                    break;
+
+                default:
+                    if (job.name.includes(" wooden ")) {
+                        newIn.item = gm.items["WOOD"];
+
+                    } else if (job.name.includes(" rock ")) {
+                        newIn.material = "INORGANIC";
+                        newIn.item = gm.items["BOULDER"];
+                        newIn.flags = ["hard", "non_economic"];
+
+                    } else if (job.name.includes(" leather")) {
+                        newIn.item = gm.items['SKIN_TANNED'];
+
+                    } else if (job.name.includes(" silk")) {
+                        newIn.flags = ['silk'];
+                        newIn.item = gm.items["CLOTH"];
+
+                    } else if (job.name.includes(" yarn")) {
+                        newIn.flags = ['yarn'];
+                        newIn.item = gm.items["CLOTH"];
+
+                    } else if (job.name.includes(" cloth")) {
+                        newIn.flags = ['plant'];
+                        newIn.item = gm.items["CLOTH"];
+
+                    } else if (job.name == "Make bed") {
+                        newIn.item = gm.items["WOOD"];
+                    }
+                    break;
+            }
         }
 
         var seekOutItem = true
@@ -4215,7 +4706,6 @@ function GuessJobItem(job) {
             || job.name.startsWith("Stud ")) {
             seekOutItem = false;
         }
-
 
         var removeS = false;
         if (job.name.indexOf("pair of ") > -1 || job.name.indexOf(" three ") > -1)
@@ -4334,9 +4824,6 @@ function GuessJobItem(job) {
         }
 
         if (newOut.item) {
-            if (newOut.item.subtypeName == "ITM_TOOL_STONE_AXE")
-                cl("prout2");
-
             job.item_typeName = newOut.item.subtypeName;
         }
 
@@ -4349,16 +4836,17 @@ function GuessJobItem(job) {
             //cl("Could not auto-resolve output item for job #" + jobs.indexOf(job) + " '" + job.name + "'");
         }
 
+        if (job.material && materialsGroups.includes(job.material)) {
+            job.material_category = [job.material];
+            job.material = "";
+        }
+
         if (job.material_category?.length > 0)
             job.material_category[0] = job.material_category[0].toLocaleLowerCase();
 
     }
-}
 
-function GuessJobItemAssociation(job) {
-    var key = ''
-    var matKey = "";
-
+    let matKey = ''
     if (job.material != "") {
         matKey = "/" + job.material;
     } else if (job.material_category != null && job.material_category.length > 0) {
@@ -4373,8 +4861,10 @@ function GuessJobItemAssociation(job) {
         itemJob[key] = job;
         itemHasJob["CRAFTS"] = true;
 
+        /*
         key = 'CRAFTS/ALL';
         itemJob[key] = job;
+        */
         return;
     }
 
@@ -4401,23 +4891,20 @@ function GuessJobItemAssociation(job) {
             return;
         }
 
-        key = (item.isTypeOnly ? item.typeName : item.typeName + "!" + item.subtypeName).toUpperCase();
+        key = GetItemTypeAndSubName(item)//(item.isTypeOnly ? item.typeName : item.typeName + "!" + item.subtypeName).toUpperCase();
         itemHasJob[key] = true;
         var fullKey = key + matKey;
+
+        if (fullKey == "DRINK/WOOD") {
+            cl("moncul");
+        }
         itemJob[fullKey] = job;
+        /*
         var allKey = key + "/ALL";
         itemJob[allKey] = job;
+        */
     });
 }
-
-function GetItemTypeByName(itemSubTypeName) {
-    return Object.entries(itemTypesMembers).find(([typeName, subTypes]) => {
-        if (subTypes.includes(itemSubTypeName))
-            return typeName;
-    });
-}
-
-
 
 function GetOrderJobLabel(order) {
     if (order.job == "PrepareMeal") {
@@ -4442,9 +4929,9 @@ function GetOrderJobLabel(order) {
     if (!job)
         return "Unknown job! " + order.job
 
-    cl(order);
+    //cl(order);
     if (config.toggleStockSorting) {
-        let item = job?.io?.out?.[0]?.item;
+        let item = GetJobItem(job);
 
         let name = "";
 
@@ -4478,7 +4965,7 @@ function GetOrderJobLabel(order) {
 
 function FindItem(search) {
     search = search.toLowerCase().trim();
-    var res = Object.entries(gm.items).find(([key, itm]) => { return key.includes(search) || itm.name.includes(search) || itm.typeName.includes(search) || itm.subtypeName.includes(search) })
+    var res = Object.entries(gm.items).find(([key, itm]) => { return key.toLowerCase().includes(search) || itm.name.toLowerCase().includes(search) || itm.typeName.toLowerCase().includes(search) || itm.subtypeName.toLowerCase().includes(search) })
     return res ? res[1] : null;
 }
 
@@ -4548,19 +5035,44 @@ function NoS(str) {
     return str;
 }
 
+function SometimtesNoS(str) {
+    if (str == "BLOCKS")
+        return str;
+
+    if (str.endsWith("S") || str.endsWith("s"))
+        return str.substr(0, str.length - 1);
+
+    return str;
+}
+
 function GetJobFromOrder(order) {
+    if (order.jobInfo)
+        return order.jobInfo;
+
     var jbs = jobs.filter(j => j.jobTypeName == order.job);
 
     if (order.reaction)
         jbs = jbs.filter(j => j.reactionName == order.reaction);
 
     if (order.material_category && order.material_category.length > 0)
-        jbs = jbs.filter(j => j.material_category && j.material_category[0] == order.material_category[0]);
+        jbs = jbs.filter(j => {
+            let jmat = (j.material_category && j.material_category.length > 0) ? j.material_category[0] : j.material;
+            let omat = (order.material_category && order.material_category.length > 0) ? order.material_category[0] : order.material;
+            return jmat.toLocaleLowerCase() == omat.toLocaleLowerCase();
+        })
+
+    if (order.meal_ingredients > 0) {
+        jbs = jbs.filter(j => { return j.mat_type == order.meal_ingredients; });
+    }
+
+    if (order.item_subtype) {
+        jbs = jbs.filter(j => j.item_typeName == order.item_subtype || GetJobItem(j)?.typeName == order.item_subtype);
+    }
 
     if (order.job == "PrepareMeal") {
         switch (order.meal_ingredients) {
             case 2:
-                jbs = jbs.filter(j => j.name == "Preapre easy meal");
+                jbs = jbs.filter(j => j.name == "Prepare easy meal");
                 break;
             case 3:
                 jbs = jbs.filter(j => j.name == "Prepare fine meal");
@@ -4579,11 +5091,8 @@ function GetJobFromOrder(order) {
             jbs = jbs.filter(j => j.material == order.material || j.material_category && j.material_category.includes(order.material.toLowerCase()));
     }
 
-    if (order.item_subtype)
-        jbs = jbs.filter(j => j.item_typeName == order.item_subtype);
-
     if (jbs.length == 1) {
-        order.foundJob = jbs[0];
+        order.jobInfo = jbs[0];
         return jbs[0];
     }
 
@@ -4594,7 +5103,7 @@ function TypeIsCraft(typeName) {
     return craftTypes.includes(typeName);
 }
 
-function SetOrderTools(element) {
+function ShowOrderTools(element) {
     var tools = $("#orderTools")[0];
     if (!tools) {
         //duplicate template dom element
@@ -4639,8 +5148,6 @@ function OrderToolMin() {
     orders = orders.filter(o => o.id !== currentHoverOrder.id);
     orders.push(currentHoverOrder);
     MarkEdited(currentHoverOrder);
-    if (config.toggleAutoSaveOrders)
-        QueueOrdersSave();
     UpdateOrdersTable();
 }
 
@@ -4651,8 +5158,6 @@ function OrderToolMax() {
     orders = orders.filter(o => o.id !== currentHoverOrder.id);
     orders.unshift(currentHoverOrder);
     MarkEdited(currentHoverOrder);
-    if (config.toggleAutoSaveOrders)
-        QueueOrdersSave();
     UpdateOrdersTable();
 }
 
@@ -4660,7 +5165,7 @@ function OrderToolDuplicate() {
     if (!currentHoverOrder)
         return;
 
-    var newOrder = CreateNewOrder(currentHoverOrder)
+    var newOrder = CreateNewOrder(null, currentHoverOrder)
     AddNewOrder(newOrder, currentHoverOrder);
 }
 
@@ -4669,7 +5174,7 @@ function OrderToolDelete() {
     if (!currentHoverOrder)
         return;
 
-    DeleteTask(currentHoverOrder);
+    ToggleDeleteOrder(currentHoverOrder);
 }
 
 function ToggleGrouping() {
@@ -4689,14 +5194,16 @@ function ConditionCoderFocused() {
     area.setSelectionRange(0, end === -1 ? area.value.length : end);
 }
 
-function JobItemName(job) {
-    if (job.io.out.length == 0)
+function GetJobItem(job) {
+    return job.io?.out?.[0]?.item;
+}
+
+function GetJobItemName(job) {
+    var item = GetJobItem(job);
+    if (!item)
         return "";
-    var outItem = job.io.out[0]?.item;
-    if (!outItem)
-        return "";
-    var typeName = outItem.typeName;
-    return (typeName + (outItem.subtypeName ? "!" + outItem.subtypeName : "")).toUpperCase();
+
+    return (NoS(item.typeName) + (item.subtypeName ? "!" + item.subtypeName : "")).toUpperCase();
 }
 
 function JobMaterialName(job) {
@@ -4727,9 +5234,13 @@ function RegisterRawMaterial(mat, domain) {
     } else if (mat.startsWith("GLASS")) {
         gm.materials[mat].Types.push("GLASS");
     } else if (mat.startsWith("COAL:")) {
-        gm.materials[mat].Types.push("COAL");
+        gm.materials[mat].Types.push("FUEL");
     } else if (mat.endsWith(":DRINK")) {
         gm.materials[mat].Types.push("DRINK");
+    } else if (mat.endsWith(":CLOTH")) {
+        gm.materials[mat].Types.push("CLOTH");
+    } else if (mat.endsWith(":THREAD")) {
+        gm.materials[mat].Types.push("THREAD");
     } else if (gm.materials[mat].Types.length == 0) {
         if (materialsGroups.indexOf(mat) == -1)
             gm.materials[mat].Types.push("OTHER");
@@ -4752,25 +5263,26 @@ function RegisterRawMaterial(mat, domain) {
 }
 
 function GetStockPool() {
-    if (!config.toggleHideMissingItems || forceAllItemsVisible) {
-        let pool = [];
-        Object.values(gm.items).forEach(item => {
-            if (itemTypesRequiringSubtypes.indexOf(item.typeName) != -1 && !item.subtypeName)
-                return;
+    let pool = [];
+    Object.values(gm.items).forEach(item => {
+        if (itemTypesRequiringSubtypes.indexOf(item.typeName) != -1 && !item.subtypeName)
+            return;
 
-            var key = (item.isTypeOnly ? item.typeName : item.typeName + "!" + item.subtypeName).toUpperCase();
+        var key = GetItemTypeAndSubName(item)// (item.isTypeOnly ? item.typeName : item.typeName + "!" + item.subtypeName).toUpperCase();
+        if (config.toggleHideMissingItems && !forceAllItemsVisible) {
+
             if (itemHasJob[key] != true && (!stocks[key] || stocks[key]["ALL"] == 0)) {
-                //cl("no job for item " + key);
-                return;
+                if (config.favoriteStockItems.indexOf(item.typeName) == -1
+                    && config.favoriteStockItems.indexOf(item.subtypeName) == -1
+                    && config.favoriteStockItems.indexOf(key) == -1) {
+                    return;
+                }
             }
 
-            var key = item.isTypeOnly ? item.typeName : item.typeName + "!" + item.subtypeName;
-            pool.push(key.toUpperCase());
-        });
-        return pool;
-    } else {
-        return Object.keys(stocks)
-    }
+        }
+        pool.push(key.toUpperCase());
+    });
+    return pool;
 }
 
 
@@ -4806,14 +5318,6 @@ function GetItemSubtypeOrType(item) {
     return item.typeName;
 }
 
-function GetItemFullName(item) {
-    if (!item)
-        return "???";
-    if (item.subtypeName)
-        return item.typeName + "." + item.subtypeName;
-    return item.typeName.toUpperCase();
-}
-
 function ToggleFavoriteItem(itemName) {
     config.favoriteStockItems ??= [];
     var index = config.favoriteStockItems.indexOf(itemName);
@@ -4829,15 +5333,355 @@ function ToggleFavoriteItem(itemName) {
 
 function UpdateFavoriteItemsButtons() {
     config.favoriteStockItems ??= [];
-    sideA.querySelectorAll(".cell").forEach(cell => {
-        var itemName = cell.getAttribute("item");
+    var cells = document.querySelectorAll(".cell")
+    cells.forEach(cell => {
+        if (cell.classList.contains("favorite"))
+            cell.classList.remove("favorite");
+    });
+    config.favoriteStockItems.forEach(favItemName => {
+        $(".cell[item='" + favItemName + "']:not(.favorite)").forEach(cell => {
+            cell.classList.add("favorite");
+        });
+    });
+    lastFavorites = config.favoriteStockItems;
+    SortStockCells();
+}
 
-        var button = cell.querySelector("fav");
-        if (config.favoriteStockItems.indexOf(itemName) >= 0) {
-            button.classList.add("favorite");
+function CloseDisclaimer() {
+    $(".disclaimer")[0].classList.add("hidden");
+    config.disclaimerAccepted = true;
+    SaveConfig();
+}
+
+function ShowDisclaimer() {
+    $(".disclaimer")[0].classList.remove("hidden");
+}
+
+
+function ToggleSmelting(element, forceRemove) {
+    var smid = element.getAttribute("data-smid");
+    config["smeltOrders"] ??= [];
+
+    var index = config["smeltOrders"].indexOf(smid);
+    var remove = index != -1 || forceRemove
+
+    if (!remove) {
+        config["smeltOrders"].push(smid);
+    } else {
+        config["smeltOrders"].splice(index, 1);
+    }
+
+    config["smeltOrders"] = Array.from(new Set(config["smeltOrders"]));
+
+    SaveConfig();
+    UpdateSmeltingButtons(true);
+}
+
+function CreateSmeltingButtons() {
+    smeltingOrders.forEach(order => {
+        var mat = order.material;
+        if (!mat) {
+            reaction = gm.reactions[order.reaction];
+            if (reaction) {
+                mat = reaction.name;
+                mat = mat.replace("make ", "")
+                mat = mat.split("bars")[0].trim().toUpperCase();
+                mat = "INORGANIC:" + mat.toUpperCase().replaceAll(" ", "_");
+            }
+        }
+        if (mat) {
+            order.materialName = DisplayableMaterialName(mat);
         } else {
-            button.classList.remove("favorite");
+            cl("Could not determine material name for smelting order:")
+            cl(order);
+        }
+
+        order.amount_left = 2;
+        order.amount_total = 2;
+
+        order.item_conditions.forEach(cond => {
+            if (cond.condition == "AtLeast")
+                cond.value = config.minResourcesForSmelting;
+        });
+    })
+
+    var hostSmelt = $(".smeltingTab .oreSmelting .content")[0];
+    var hostAlloy = $(".smeltingTab .alloySmelting .content")[0];
+    hostSmelt.innerHTML = "";
+    hostAlloy.innerHTML = "";
+
+    smeltingOrders.forEach(order => {
+        var button = document.createElement("button");
+        button.classList.add("smeltButton");
+        button.setAttribute("data-smid", order.id);
+        button.setAttribute("onclick", "ToggleSmelting(this)");
+
+        var name = "";
+        if (order.job == "SmeltOre") {
+            name = order.materialName;
+            hostSmelt.appendChild(button);
+        } else {
+            var name = gm.reactions[order.reaction]?.name
+            name ??= gm.material;
+            name = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
+            hostAlloy.appendChild(button);
+        }
+        name = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
+        button.innerHTML = name + "<div class='qtt' title='Available resources'>0</div>";
+    });
+}
+
+function UpdateSmeltingButtons(updateSmeltingOrders = false) {
+
+    config.smeltOrders ??= [];
+    $(".smeltingTab button").forEach(btn => {
+        var smid = btn.getAttribute("data-smid");
+        if (config.smeltOrders.indexOf(smid) == -1) {
+            btn.classList.remove("enabled");
+        } else {
+            btn.classList.add("enabled");
+        }
+        let order = smeltingOrders.find(o => o.id == smid);
+        if (order) {
+            var qtt = 0;
+            if (order.job == "SmeltOre") {
+                qtt = stocks["BOULDER"]?.[order.material] ?? 0;
+            } else {
+                var reaction = gm.reactions[order.reaction];
+                reaction.reagents.forEach(reac => {
+                    if (reac.material) {
+                        if (reac.item_type == 0) {
+                            //stone
+                            qtt += stocks["BOULDER"]?.[reac.material] ?? 0;
+                        } else {
+                            //bar
+                            qtt += stocks["BAR"]?.[reac.material] ?? 0;
+                        }
+                    }
+                });
+            }
+            var qttLabel = btn.querySelector(".qtt")
+            qttLabel.innerText = qtt > 99 ? "99+" : qtt;
         }
     });
-    SortStockCells();
+
+    UpdateSmeltingOrders(updateSmeltingOrders);
+}
+
+function UpdateSmeltingOrders(doUpdateTable = false) {
+    var buttons = $(".smeltingTab button");
+    var modified = false;
+
+    config.smeltOrders = [...new Set(config.smeltOrders)];
+
+    buttons.forEach(button => {
+        var id = button.getAttribute("data-smid");
+        var smeltingOrder = smeltingOrders.find(o => o.id == id);
+        if (!smeltingOrder) {
+            return;
+        }
+
+        var mustAdd = config.smeltOrders.indexOf(id) != -1;
+
+        var existings = orders.filter(order => order.job == smeltingOrder.job
+            && ((order.reaction && order.reaction == smeltingOrder.reaction) || (order.material && order.material == smeltingOrder.material)));
+
+        if (!mustAdd) {
+            existings.forEach(existing => {
+                if (!existing.deleted) {
+                    ToggleDeleteOrder(existing, true);
+                    modified = true;
+                }
+            })
+        } else if (mustAdd) {
+            if (existings.length == 0) {
+                newOrder = AddNewOrder(JSON.parse(JSON.stringify(smeltingOrder)));
+                newOrder.isNew = true;
+                modified = true;
+            } else {
+                firstDeleted = existings.find(e => e.deleted)
+                if (firstDeleted)
+                    ToggleDeleteOrder(firstDeleted, true);
+            }
+        }
+    });
+
+    if (doUpdateTable)
+        UpdateOrdersTable(false);
+}
+
+function GetOrderFromElement(element) {
+    var id = element.closest(".orderRow")?.getAttribute("orderId");;
+    return GetOrderById(id);
+}
+
+function GetOrderById(id) {
+    return orders.find(o => o.id == id);
+}
+
+function GetOrderProducedItem(order) {
+    if (!order)
+        return null;
+
+    var job = GetJobFromOrder(order);
+
+    if (!job)
+        return null;
+
+    if (job.jobTypeName == "PrepareMeal") {
+        switch (order.meal_ingredients) {
+            case 2:
+                return gm.items["ITEM_FOOD_BISCUITS"];
+            case 3:
+                return gm.items["ITEM_FOOD_STEW"];
+            case 4:
+                return gm.items["ITEM_FOOD_ROAST"];
+        }
+    }
+
+    return GetJobItem(job) || null;
+}
+
+
+function SetOrderTargetQtt(order, qttDesired) {
+
+    if (qttDesired <= 0)
+        qttDesired = 0;
+
+    if (OrderIsRepeating(order)) {
+        var producedItemCondition = GetOrderOutputItemCondition(order)
+
+        if (!producedItemCondition) {
+            Trace("Repeating order: could not find condition for output item.");
+            return;
+        }
+        producedItemCondition.value = qttDesired;
+    }
+
+    let min = Math.min(GetOrderBatchSize(), qttDesired);
+    order.amount_total = min;
+    order.amount_left = min;
+    order.item_conditions.forEach(cond => {
+        if (cond.condition == "GreaterThan")
+            cond.value = min;
+    });
+
+    UpdateChangedJobQtt(order);
+}
+
+function UpdateChangedJobQtt(order) {
+    var orderLine = ordersTable.querySelector(`div[orderId='${order.id}']`);
+    var qttDesired = GetOrderTargetQtt(order);
+    var changed = false;
+    if (orderLine) {
+        changed = orderLine.querySelector(".property.amount_left .inputNumber").value != qttDesired;
+        orderLine.querySelector(".property.amount_left .inputNumber").value = qttDesired;
+        orderLine.querySelector(".property.pom_targetQtt .inputNumber").value = qttDesired;
+    }
+
+    var job = GetJobFromOrder(order);
+    if (!job) {
+        cl("Unknown job for order id: " + order.id);
+    } else {
+        let item = GetJobItem(job);
+        if (!item) {
+            cl("Unknown item for job: " + job.jobTypeName);
+        } else {
+            UpdateStockItemLine(item);
+        }
+    }
+
+    if (qttDesired == 0) {
+        DeleteOrder(order);
+    } else {
+        if (order.deleted)
+            ToggleDeleteOrder
+        if (changed)
+            MarkEdited(order);
+    }
+}
+
+function GetOrderTargetQtt(order) {
+    if (!order)
+        return 0;
+
+    var item = GetOrderProducedItem(order);
+    if (!item)
+        return 0;
+
+    var mat = order.material || order.material_category?.[0] || "ALL";
+    mat = mat.toUpperCase();
+
+    wanted = GetWantedProduction(item, mat);
+    return wanted;
+}
+
+function GetOrderProgressPercent(order) {
+    var k = 0;
+    if (!OrderIsRepeating(order)) {
+        k = order.amount_total > 0 ? (order.amount_total - order.amount_left) / order.amount_total : 0;
+    } else {
+        k = GetOrderCurrentStocks(order) / GetOrderTargetQtt(order);
+    }
+    return Math.min(1, Math.max(0, k)) * 100;
+}
+
+function GetOrderCurrentStocks(order) {
+    var item = GetOrderProducedItem(order);
+    if (!item)
+        return 0;
+
+    var key = GetItemTypeAndSubName(item);
+    var mat = GetOrderMaterialName(order).toUpperCase();
+    return stocks[key]?.[mat] || 0;
+}
+
+function GetItemSimpleName(item) {
+    return item.subtypeName ? item.subtypeName : item.typeName;
+}
+
+function GetItemTypeAndSubName(item) {
+    var key = item.typeName ? item.typeName + "!" + item.subtypeName : item.subtypeName;
+    if (item.isTypeOnly)
+        key = item.typeName;
+    key = key.toUpperCase();
+    return key;
+}
+
+function OrderIsRepeating(order) {
+    return order.item_conditions != null && order.item_conditions.length > 0 && order.item_conditions.some(cond => cond.condition == "LessThan");
+}
+
+function GetOrderOutputItemCondition(order) {
+
+    GetJobFromOrder(order);
+    if (!order.jobInfo) {
+        cl("Cannot set target qtt for order id " + order.id + " because job is unknown.");
+        return;
+    }
+
+    var job = order.jobInfo
+    var outItem = GetJobItem(job);
+    if (!outItem) {
+        cl("Cannot set target qtt for order id " + order.id + " because output item is unknown.");
+        return;
+    }
+
+    var isFood = job.jobTypeName == "PrepareMeal"
+    if (!order.item_conditions)
+        return null;
+
+    return order.item_conditions.find(cond =>
+        cond.condition == "LessThan"
+        &&
+        (
+            (isFood && cond.item_type == "FOOD")
+            ||
+            (
+                ((cond.item_subtype?.toUpperCase() ?? "") == (outItem.subtypeName?.toUpperCase() ?? ""))
+                &&
+                ((cond.item_type?.toUpperCase() ?? "") == (SometimtesNoS(outItem.typeName?.toUpperCase() ?? "")))
+            )
+        )
+    )
 }
