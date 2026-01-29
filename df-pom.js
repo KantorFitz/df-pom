@@ -29,6 +29,7 @@ var gameStatus;
 var lastGameStatusCheck = 0;
 var lastPopData;
 var lastFavorites;
+var modificationsPending;
 
 var itemJob = [];
 var itemHasJob = {};
@@ -42,6 +43,7 @@ var itemWithDimensions = {
     "THREAD": 15000
 }
 
+let initToast;
 var emptyCellsCreated = false;
 var wasShiftPressed = false;
 var wasCtrlPressed = false;
@@ -55,20 +57,25 @@ const pauseAll = GetPauseCondition(PAUSECHANNEL_ALLSTASKS);
 const pauseFrom = GetPauseCondition(PAUSECHANNEL_FROMTASK);
 const pauseOne = GetPauseCondition(PAUSECHANNEL_ONETASK);
 
-var manualWriteOrders = false;
-var manualReadOrders = false;
-var manualReadStocks = false;
+var showWriteOrderToast = false;
+var showReadOrderToast = false;
+var showReadStockToast = false;
 var generalFilter = ""
 var currendFuseInput;
 var previousSizeMode;
 var fuses = [];
 var keysDown = [];
-const DELAY_BETWEEN_FILE_OPS_MS = 3500;
+let keyedToasts = {};
+
+var lastOrderRead = 0;
+var lastOrdersAccess = 0;
+const ORDER_ACCESS_MIN_DELAY = 250;
+const ORDER_READ_UPDATE_INTERVAL = 3500;
+
 var multiFill = false;
 var forceAllItemsVisible = false;
 var openedConditionsOrder;
 var openedConditionsIndex;
-var lastFileAccess;
 var readingStocks = false;
 var readingJobs = false;
 var itemsTypesAndSubtypes = {};
@@ -119,9 +126,6 @@ var sideB;
 
 var cl = console.log
 
-
-setInterval(ReloadCss, 2500);
-
 document.addEventListener("DOMContentLoaded", async (event) => { InitDOM() });
 document.addEventListener("mouseover", function (e) {
     hoveredNumInput = null;
@@ -160,63 +164,66 @@ async function InitData() {
     pleaseWait = true;
     $(".pleaseWait")[0].classList.remove("hidden");
 
-    Toast("Initializing...");
-    await GetConfig();
+    initToast = Toast("<i>Initializing...</i>", true);
+    try {
+        await GetConfig();
 
-    if (!config.disclaimerAccepted)
-        $(".disclaimer")[0].classList.remove("hidden");
+        if (!config.disclaimerAccepted)
+            $(".disclaimer")[0].classList.remove("hidden");
 
-    ApplyConfigClasses();
+        ApplyConfigClasses();
 
-    let ok = false;
-    while (!ok) {
-        ok = await GetGameStatus();
-        if (!ok)
-            await pause(300);
+        let ok = false;
+        while (!ok) {
+            ok = await GetGameStatus();
+            if (!ok)
+                await pause(300);
+        }
+
+        ok = false;
+        while (!ok) {
+            let toast = Toast("Getting game infos...", true);
+            ok = await GetGameInfos();
+            if (!ok)
+                await pause(300);
+            ClearToast(toast);
+        }
+
+        ok = false;
+        while (!ok) {
+            let toast = Toast("Reading orders...", true);
+            ok = await ReadJobs();
+            if (!ok)
+                await pause(300);
+            ClearToast(toast);
+        }
+
+        initDone = true;
+
+        await QueueOrdersRead(true, true);
+        await QueueStocksRead(true, true);
+        RefreshStocksFilter()
+        CreateSmeltingButtons()
+    } catch (e) {
+        ClearToast(initToast);
     }
-
-    ok = false;
-    while (!ok) {
-        Toast("Getting game infos...");
-        ok = await GetGameInfos();
-        if (!ok)
-            await pause(300);
-    }
-
-    ok = false;
-    while (!ok) {
-        Toast("Reading jobs...");
-        ok = await ReadJobs();
-        if (!ok)
-            await pause(300);
-    }
-
-    initDone = true;
-
-    await QueueOrdersRead(true);
-    await QueueStocksRead(true);
-    RefreshStocksFilter()
-    CreateSmeltingButtons()
 
     await DataAutoUpdater();
+
 }
 
-function QueueOrdersRead(immediate = false, manual = false) {
-    manualReadOrders = manual;
+function QueueOrdersRead(immediate = false, showToast = false) {
+    showReadOrderToast = showToast;
     mustReadOrders = true;
-    if (immediate)
-        TryReadWriteOrders(true);
 }
 
-function QueueOrdersSave(immediate = false, manual = false) {
-    manualWriteOrders = manual;
+function QueueOrdersSave(immediate = false, showToast = false) {
+    showWriteOrderToast = showToast;
     mustWriteOrders = true;
-    if (immediate)
-        TryReadWriteOrders(true);
 }
 
-function QueueStocksRead(immediate = false, manual = false) {
-    manualReadStocks = manual;
+function QueueStocksRead(immediate = false, showToast = false) {
+    showReadStockToast = showToast;
     mustReadStocks = true;
     if (immediate)
         TryReadStocks();
@@ -259,7 +266,7 @@ function ResetApp() {
     keysDown = [];
     openedConditionsOrder = null;
     openedConditionsIndex = 0;
-    lastFileAccess = 0;
+    lastOrdersAccess = 0;
     readingStocks = false;
     readingJobs = false;
     inventoryDisplayedMaterials = [];
@@ -273,7 +280,7 @@ function ResetApp() {
     sortedJobTypes = [];
     itemTypesMembers = {};
 
-    $(".ordersTable")[0].innerHTML = $(".ordersTable .help")[0].outerHTML;
+    ordersTable.innerHTML = $(".ordersTable .help")[0].outerHTML;
 
     ClearStockTable();
     InitData();
@@ -292,47 +299,46 @@ function ClearStockTable() {
     $(".inventoryBody .valuesSide")[0].innerHTML = "";
 }
 
-async function TryReadWriteOrders(immediate = false) {
-    if (immediate)
-        lastFileAccess = 0;
-
-    var currentFileAccess = Date.now();
-    if (lastFileAccess == undefined)
-        lastFileAccess = 0;
-
-    var timePassed = currentFileAccess - lastFileAccess;
-    if (timePassed < DELAY_BETWEEN_FILE_OPS_MS)
+async function TryReadWriteOrders() {
+    var timePassed = Date.now() - lastOrdersAccess;
+    if (timePassed < ORDER_ACCESS_MIN_DELAY)
         return;
+    lastOrdersAccess = Date.now();
 
-    //check if any condition editor is opened
     var conditionEdited = openedConditionsOrder != null || document.querySelector(".conditionEditor:hover") || document.querySelector(".item_conditions:hover");
     if (!conditionEdited) {
+
         if (mustWriteOrders) {
 
-            if (manualWriteOrders)
-                Toast("Saving orders...");
+            let toast = null;
+            if (showWriteOrderToast)
+                toast = Toast("Saving orders...", true);
+            showWriteOrderToast = false;
 
-            mustWriteOrders = false;
-            lastFileAccess = Date.now();
             await WriteOrders();
-            lastFileAccess = Date.now();
 
-            manualWriteOrders = false;
-            mustReadOrders = true;
+            ClearToast(toast);
 
-        }
+            await pause(100);
+            PostWriteOrders();
 
-        if (mustReadOrders || config.toggleAutoReadOrders) {
+        } else if (!modificationsPending && (mustReadOrders || config.toggleAutoReadOrders)) {
 
-            if (manualReadOrders)
-                Toast("Reading orders...");
+            timePassed = Date.now() - lastOrderRead;
+            if (timePassed < ORDER_READ_UPDATE_INTERVAL)
+                return;
+            lastOrderRead = Date.now();
+
+            let toast = null;
+            if (showReadOrderToast)
+                toast = Toast("Reading orders...", true);
+            showReadOrderToast = false;
 
             mustReadOrders = false;
-            lastFileAccess = Date.now();
             await ReadOrders();
-            lastFileAccess = Date.now();
 
-            manualReadOrders = false;
+            ClearToast(toast);
+
         }
     }
 }
@@ -628,14 +634,6 @@ function DragDrop(e) {
     MarkEdited(movedOrder);
     UpdateOrdersTable();
 
-    /*
-    if (toIndex > fromIndex) {
-        ordersTable.insertBefore(ordersTable.children[fromIndex + 1], ordersTable.children[toIndex + 2]);
-    } else {
-        ordersTable.insertBefore(ordersTable.children[fromIndex + 1], ordersTable.children[toIndex + 1]);
-    }
-        */
-
 }
 
 
@@ -815,7 +813,7 @@ function UpdateOrdersTable(updateSmeltingButtons = true) {
 
             if (propInfo && propInfo.isInput) {
 
-                var input = editedLine.querySelector(`.property.${property} .inputNumber`);
+                let input = editedLine.querySelector(`.property.${property} .inputNumber`);
                 if (!input) {
                     input = CreateInputForOrders(InputChangeCallback_PropertyValue, order, property, -1);
                     if (property != "amount_total")
@@ -876,28 +874,18 @@ function UpdateOrdersTable(updateSmeltingButtons = true) {
 
 
     orders.forEach(order => {
-        if (IsTaskPaused(order, PAUSECHANNEL_ONETASK)) {
-            ordersTable.querySelector(`div[orderId='${order.id}']`).classList.add("pauseOne");
-        } else {
-            ordersTable.querySelector(`div[orderId='${order.id}']`).classList.remove("pauseOne");
-        }
-
-        if (IsTaskPaused(order, PAUSECHANNEL_FROMTASK)) {
-            ordersTable.querySelector(`div[orderId='${order.id}']`).classList.add("pauseFrom");
-        } else {
-            ordersTable.querySelector(`div[orderId='${order.id}']`).classList.remove("pauseFrom");
-        }
-
-        if (IsTaskPaused(order, PAUSECHANNEL_ALLSTASKS)) {
-            ordersTable.querySelector(`div[orderId='${order.id}']`).classList.add("pauseAll");
-        } else {
-            ordersTable.querySelector(`div[orderId='${order.id}']`).classList.remove("pauseAll");
+        const row = ordersTable.querySelector(`div[orderId='${order.id}']`);
+        if (row) {
+            row.classList.toggle("pauseOne", IsTaskPaused(order, PAUSECHANNEL_ONETASK));
+            row.classList.toggle("pauseFrom", IsTaskPaused(order, PAUSECHANNEL_FROMTASK));
+            row.classList.toggle("pauseAll", IsTaskPaused(order, PAUSECHANNEL_ALLSTASKS));
         }
     });
 
     if (updateSmeltingButtons)
         CheckSmeltingJobs();
 
+    ordersTable.classList.toggle("empty", orders.length == 0);
     FilterJobs()
 }
 
@@ -1161,16 +1149,19 @@ async function ReadOrders() {
 
     waitForOrdersOperation = true;
 
-    Trace("Reading production orders...");
+    Trace("Reading orders...");
+
     json = await window.api.ReadOrdersFile();
 
     if (json == null) {
         waitForOrdersOperation = false;
+        Trace("Reading orders: null.");
         return;
     }
 
     if (CheckError(json, "ReadOrders")) {
         waitForOrdersOperation = false;
+        Trace("Reading orders: error.");
         return;
     }
     ClosePopInfoWaiting("ReadOrders");
@@ -1223,7 +1214,7 @@ async function ReadOrders() {
     UpdateOrdersTable();
     UpdateStocksWanted();
 
-    Trace("Reading production: completed.");
+    Trace("Reading orders: completed.");
     waitForOrdersOperation = false;
 }
 
@@ -1281,12 +1272,14 @@ async function WriteOrders() {
         return;
 
     await GetGameStatus();
+    let toast = null;
     while (gameStatus.workOrderConditionOpen == "true") {
-        Toast("Cannot save modifications while work order conditions are being edited in-game as this could crash the game.<br><b>Please close the Order Conditions Editor in-game</b> to save changes.");
+        toast = Toast("Cannot save modifications while work order conditions are being edited in-game as this could crash the game.<br><b>Please close the Order Conditions Editor in-game</b> to save changes.")
         await pause(500);
         await GetGameStatus();
     }
-    Toast("")
+    if (toast)
+        ClearToast(toast);
 
     Trace("Writing orders...");
 
@@ -1320,18 +1313,18 @@ async function WriteOrders() {
     }
     Trace("Writing orders: completed.");
     waitForOrdersOperation = false;
+}
 
-    //clear new pushed orders
-    var news = $(".orderRow.new").length;
-    if (news) {
-        await pause(300);
-        await ReadOrders();
-        orders.filter(o => o.isNew).forEach(o => orders.splice(orders.indexOf(o), 1));
-        $(".orderRow.new").forEach(el => el.remove());
-    }
+function PostWriteOrders() {
+    QueueOrdersRead(true);
+    orders.filter(o => o.isNew).forEach(o => orders.splice(orders.indexOf(o), 1));
+    $(".orderRow.new").forEach(el => el.remove());
     $(".editable.updating").forEach(el => el.classList.remove("updating"));
-
+    CleanupDuplicateOrders(false)
     UpdateOrdersTable();
+
+    mustWriteOrders = false;
+    modificationsPending = false;
 }
 
 function DeleteEmptyKeys(obj) {
@@ -1361,7 +1354,7 @@ function CloneOrdersNoDom(orders) {
         for (const k in orders) {
             if (k.endsWith("_cell") || k.endsWith("_element"))
                 continue;
-            if (k == "isNew" || k == "orderHovered" || k == "jobInfo" || k == "jobInfo" || k == "edited" || k == "pom_targetQtt")
+            if (k == "isNew" || k == "orderHovered" || k == "jobInfo" || k == "edited" || k == "pom_targetQtt")
                 continue;
             if (k == "max_workshops" && orders[k] === 0)
                 continue;
@@ -1375,36 +1368,7 @@ function CloneOrdersNoDom(orders) {
     return orders;
 }
 
-onmessage = async (e) => {
-    // Retrieve message sent to work from main script
-    const message = e.data;
-
-    // Get handle to draft file
-    const root = await navigator.storage.getDirectory();
-    const draftHandle = await root.getFileHandle("draft.txt", { create: true });
-    // Get sync access handle
-    const accessHandle = await draftHandle.createSyncAccessHandle();
-
-    // Get size of the file.
-    const fileSize = accessHandle.getSize();
-    // Read file content to a buffer.
-    const buffer = new DataView(new ArrayBuffer(fileSize));
-    const readBuffer = accessHandle.read(buffer, { at: 0 });
-
-    // Write the message to the end of the file.
-    const encoder = new TextEncoder();
-    const encodedMessage = encoder.encode(message);
-    const writeBuffer = accessHandle.write(encodedMessage, { at: readBuffer });
-
-    // Persist changes to disk.
-    accessHandle.flush();
-
-    // Always close FileSystemSyncAccessHandle if done.
-    accessHandle.close();
-};
-
-
-function ReloadCss() {
+function ReloadCSS() {
     const links = document.getElementsByTagName('link');
     const timestamp = Date.now();
 
@@ -1423,7 +1387,7 @@ function ReloadCss() {
 
 
 function CreateInputForOrders(onChangeCallback, orderObject, affectedProperty, conditionIndex = -1) {
-    input = document.createElement("input");
+    let input = document.createElement("input");
     input.type = "number";
     input.value = conditionIndex > -1 ? orderObject.item_conditions[conditionIndex].value : orderObject[affectedProperty];
     input.classList.add("inputNumber");
@@ -1494,6 +1458,7 @@ function InputChangeCallback_ConditionValue(e) {
 
 function MarkEdited(order) {
     order.edited = true;
+    modificationsPending = true;
     var line = ordersTable.querySelector(`div[orderId='${order.id}']`);
 
     if (line)
@@ -1565,10 +1530,10 @@ function ResumeTask(order, stopChannel = 0) {
 }
 
 function IsTaskPaused(order, stopChannel = 0) {
+    var pauseCondition = GetPauseCondition(stopChannel);
+
     if (stopChannel === PAUSECHANNEL_ANY)
         return order.item_conditions.findIndex(cond => cond.condition === pauseCondition.condition && cond.value <= 0) !== -1;
-
-    var pauseCondition = GetPauseCondition(stopChannel);
 
     if (!order.item_conditions)
         return false;
@@ -1640,14 +1605,12 @@ function FilterChanged(search) {
     if (search != '') {
         if (!forceAllItemsVisible) {
             forceAllItemsVisible = true;
-            $("body")[0].classList.add("forceShowAllItems");
-            ToggleMissingItems();
+            ToggleMissingItems(true);
         }
     } else {
         if (forceAllItemsVisible) {
             forceAllItemsVisible = false;
-            $("body")[0].classList.remove("forceShowAllItems");
-            ToggleMissingItems();
+            ToggleMissingItems(true);
         }
     }
 
@@ -1902,13 +1865,6 @@ function AddNewOrder(newOrder, afterOrder = null) {
     MarkEdited(newOrder);
     UpdateOrdersTable();
     return newOrder
-
-
-    //scroll to new order
-    setTimeout(() => {
-        var newLine = ordersTable.querySelector(`div[orderId='${newOrder.id}']`);
-        newLine.scrollIntoView({ behavior: "smooth", block: "center" });
-    }, 100);
 }
 
 async function GetConfig() {
@@ -2021,35 +1977,17 @@ function ToggleDeleteOrder(order, skipUpdate = false) {
 
 
 function SetTab(tab) {
-    /*
-    $("body")[0].classList.remove("tab_inventoryOpened");
-    $("body")[0].classList.remove("tab_ordersOpened");
-    $("body")[0].classList.remove("tab_smeltingOpened");
-    */
-
     switch (tab) {
         case "inventory":
-            if ($("body")[0].classList.contains("tab_inventoryOpened")) {
-                $("body")[0].classList.remove("tab_inventoryOpened");
-            } else {
-                $("body")[0].classList.add("tab_inventoryOpened");
-            }
+            ToggleOption("tabInventory");
             break;
 
         case "orders":
-            if ($("body")[0].classList.contains("tab_ordersOpened")) {
-                $("body")[0].classList.remove("tab_ordersOpened");
-            } else {
-                $("body")[0].classList.add("tab_ordersOpened");
-            }
+            ToggleOption("tabOrders");
             break;
 
         case "smelting":
-            if ($("body")[0].classList.contains("tab_smeltingOpened")) {
-                $("body")[0].classList.remove("tab_smeltingOpened");
-            } else {
-                $("body")[0].classList.add("tab_smeltingOpened");
-            }
+            ToggleOption("tabSmelting");
             break;
     }
 }
@@ -2194,7 +2132,7 @@ function SetupOrderFromJob(order, job) {
                 var item = inp[key];
                 if (item) {
                     if (item.typeName)
-                        condition.item_type = SometimtesNoS(item.typeName);
+                        condition.item_type = SometimesNoS(item.typeName);
                     if (item.subtypeName)
                         condition.item_subtype = item.subtypeName;
                     if (item.flags)
@@ -2237,7 +2175,7 @@ function SetupOrderFromJob(order, job) {
             }
             var item = outp.item;
             if (item.typeName)
-                condition.item_type = SometimtesNoS(item.typeName);
+                condition.item_type = SometimesNoS(item.typeName);
 
             //condition.item_type"] = NoS(item.typeName.toUpperCase());
             if (item.subtypeName)
@@ -2271,7 +2209,7 @@ function SetupOrderFromJob(order, job) {
         condition = {
             "condition": "LessThan",
             "item_type": "FOOD",
-            "value": 0,
+            "value": GetOrderBatchSize(),
             "flags": ["unrotten"]
         }
         order.item_conditions.push(condition);
@@ -2297,6 +2235,9 @@ function FindOrdersForJob(job) {
         if (o.job != job.jobTypeName)
             return false;
 
+        if (!OrderIsRepeating(o))
+            return false;
+
         if ((o.reaction || '') != (job.reactionName || ''))
             return false;
 
@@ -2318,7 +2259,7 @@ function FindOrdersForJob(job) {
     });
 }
 
-function CleanupDuplicateOrders() {
+function CleanupDuplicateOrders(showToast = true) {
     var totalMerges = 0;
     Object.values(orders).forEach(orderA => {
         if (orderA.deleted)
@@ -2351,8 +2292,13 @@ function CleanupDuplicateOrders() {
         });
 
         if (orderA.amount_total != targetCount || orderA.amount_left != leftCount) {
-            orderA.amount_total = targetCount;
-            orderA.amount_left = leftCount;
+            if (OrderIsRepeating(orderA)) {
+                orderA.amount_left = Math.min(orderA.amount_left, GetOrderBatchSize());
+                orderA.amount_total = Math.min(orderA.amount_total, GetOrderBatchSize());
+            } else {
+                orderA.amount_total = Math.ceil(targetCount / (totalMerges + 1));
+                orderA.amount_left = Math.ceil(leftCount / (totalMerges + 1));
+            }
             MarkEdited(orderA);
         }
 
@@ -2362,10 +2308,12 @@ function CleanupDuplicateOrders() {
     });
 
     if (totalMerges > 0) {
-        Toast("Merged " + totalMerges + " duplicate(s)");
+        if (showToast)
+            Toast("Merged " + totalMerges + " duplicate(s)");
         UpdateOrdersTable();
     } else {
-        Toast("No duplicate orders found");
+        if (showToast)
+            Toast("No duplicate orders found");
     }
 }
 
@@ -2373,8 +2321,6 @@ function CleanupDuplicateOrders() {
 function StockEntryLabel(itemName) {
     var item = gm.items[itemName]
     if (!item) {
-        if (a.b.b.d)
-            cl("lol")
         cl("Unknown item: " + itemName);
         return itemName;
     }
@@ -2504,22 +2450,22 @@ async function TryReadStocks() {
 
     let ok = false;
 
+    let toast;
+    if (showReadStockToast)
+        toast = Toast("Reading stocks...", true);
+    showReadStockToast = false;
+
     while (!ok) {
         ok = await ReadStocksBatch();
         if (!ok)
             await pause(150);
     }
-
-    if (manualReadStocks)
-        Toast("Stocks acquired.");
-    manualReadStocks = false;
-
+    ClearToast(toast);
+    await pause(500);
     readingStocks = false;
 }
 
 async function ReadStocksBatch() {
-    //Trace("Reading stocks...");
-
     data = await window.api.GetStocks()
 
     if (data == null)
@@ -2545,11 +2491,12 @@ async function ReadStocksBatch() {
     });
 
     if (data.completed) {
-        Trace("Reading stocks: completed.");
+        Trace("Stocks updated.");
 
         if (pleaseWait) {
             pleaseWait = false;
             Toast("<b>Ready</b>");
+            ClearToast(initToast);
             $(".pleaseWait")[0].classList.add("hidden");
         }
         FinalizeStocksData();
@@ -2811,11 +2758,11 @@ function CreateStockCell(item, material) {
 
     var input = matCell.querySelector("input.wanted");
     //update input value unless its being edited
+    var wanted = GetWantedProduction(item, material);
     if (input && document.activeElement != input)
-        input.value = GetWantedProduction(item, material);
+        input.value = wanted;
 
     var stocked = 0;
-    var wanted = GetWantedProduction(item, material);
     if (stocks[itemName] && stocks[itemName][material])
         stocked = stocks[itemName][material];
 
@@ -3010,16 +2957,13 @@ function ApplyInventoryMaterialFilters() {
 }
 
 function SortStockCells() {
+    var itemSortKey = {};
 
-    var ordering = {};
-    var itemSortKey = {}
+    var itemTypeCells = $(".inventoryTable .cell.itemType[item]");
+    itemTypeCells.forEach(cell => {
+        let sorter = "";
 
-    var stockCells = $(".inventoryTable .cell.itemType[item]");
-    var sortedKeys = Array.from(stockCells).map(cell => {
-        let sorter = ""
-
-        var fav = cell.classList.contains("favorite");
-        if (fav)
+        if (cell.classList.contains("favorite"))
             sorter += "000";
 
         if (config.toggleStockSorting) {
@@ -3030,23 +2974,20 @@ function SortStockCells() {
 
         sorter += CellLabelRaw(cell.innerHTML);
         itemSortKey[cell.getAttribute("item")] = sorter;
-        return sorter;
-    });
-    sortedKeys.sort((a, b) => a.localeCompare(b));
-
-    var sortedCells = $(".inventoryTable .cell[item]");
-    sortedCells.forEach(cell => {
-        var itemIndex = 0;
-        var itemName = cell.getAttribute("item");
-
-        var itemName = cell.getAttribute("item");
-        var key = itemSortKey[itemName];
-        itemIndex = sortedKeys.indexOf(key);
-        cell.style.order = itemIndex;
-        ordering[itemName] = itemIndex;
     });
 
+    // Build sorted order map (avoids indexOf in loop)
+    var sortedItems = Object.entries(itemSortKey).sort((a, b) => a[1].localeCompare(b[1]));
+    var orderMap = {};
+    sortedItems.forEach((entry, index) => {
+        orderMap[entry[0]] = index;
+    });
 
+    // Apply to all cells with [item]
+    $(".inventoryTable .cell[item]").forEach(cell => {
+        var itemName = cell.getAttribute("item");
+        cell.style.order = orderMap[itemName] ?? 9999;
+    });
 }
 
 function CellLabelRaw(label) {
@@ -3577,10 +3518,10 @@ function GetWantedProduction(item, mat) {
         return 0;
 
     let myOrders = FindOrdersForJob(job);
+    myOrders = myOrders.filter(order => OrderIsRepeating(order));
+
     if (myOrders.length == 0)
         return 0;
-
-    //cl("Wanted production for " + item + " / " + mat + " is " + myOrders[0].amount_total);
 
     var prodCondition = GetOrderOutputItemCondition(myOrders[0]);
     if (prodCondition)
@@ -3698,7 +3639,7 @@ function OnGeneralKeyUp(e) {
     //space
     if (key == " ") {
         if (currentHoverOrder) {
-            if (double) {
+            if (IsShiftPressed() && IsCtrlPressed()) {
                 e.preventDefault();
                 OrderToolStopAllAfter();
             } else {
@@ -3735,7 +3676,7 @@ function OnGeneralKeyUp(e) {
             if (double) {
                 ToggleOption("AutoReadOrders");
             } else {
-                ReadOrders();
+                QueueOrdersRead(true, true);
             }
         }
 
@@ -3744,7 +3685,7 @@ function OnGeneralKeyUp(e) {
             if (double) {
                 ToggleOption("AutoReadStocks");
             } else {
-                ReadStocksBatch();
+                QueueStocksRead(true, true);
             }
         }
 
@@ -3762,7 +3703,7 @@ function OnGeneralKeyUp(e) {
             if (double) {
                 ToggleOption("AutoSaveOrders");
             } else {
-                WriteOrders();
+                QueueOrdersSave(true, true);
             }
         }
 
@@ -3802,7 +3743,8 @@ function OnGeneralKeyUp(e) {
         }
 
         if (key == "c") {
-            //free
+            //reload css (dev)
+            ReloadCSS();
         }
 
         if (key == "v") {
@@ -4055,31 +3997,73 @@ function Trace(msg) {
     }, 3000);
 }
 
-function Toast(msg) {
+function ClearToast(toastInfo) {
+    if (toastInfo)
+        QuickClearToast(toastInfo);
+}
 
+function Toast(msg, stay = false) {
     if (msg == "") {
-        $(".toasts")[0].innerHTML = "";
-        clearTimeout(lastToastRemoval);
+        //clear all toasts
+        Object.values(keyedToasts).forEach(toastData => {
+            clearTimeout(toastData.timeoutId);
+            if (toastData.toast?.parentElement)
+                toastData.toast.parentElement.removeChild(toastData.toast);
+        });
+        keyedToasts = {};
+        return;
     }
 
-    var firstChild = $(".toasts")[0].firstChild;
 
-    if (firstChild?.innerHTML == msg) {
-        clearTimeout(lastToastRemoval);
-        firstChild.classList.remove("repeat");
-        firstChild.classList.add("repeat");
-    } else {
-        var pop = document.createElement("div");
-        pop.classList.add("toastActivity");
+    let pop;
+    let key = msg;
+
+    let toastInfo = keyedToasts[key];
+    if (!toastInfo) {
+
+        pop = document.createElement("div");
         pop.innerHTML = msg;
+
+        let firstChild = $(".toasts")[0].firstChild;
         $(".toasts")[0].insertBefore(pop, firstChild);
+
+        keyedToasts[key] = {
+            key: key,
+            toast: pop,
+            timeoutId: 0
+        }
+        toastInfo = keyedToasts[key];
+
     }
 
-    lastToastRemoval = setTimeout(() => {
-        const p = pop;
+    if (stay) {
+        toastInfo.toast.classList.add("repeat");
+    } else {
+        SlowClearToast(keyedToasts[key]);
+    }
+
+    return toastInfo;
+}
+
+function SlowClearToast(toast) {
+    toast.timeoutId = setTimeout(() => {
+        const p = toast.toast;
+        const k = toast.key;
         if (p?.parentElement)
             p.parentElement.removeChild(p);
-    }, 5000);
+        delete keyedToasts[k];
+    }, 5000)
+}
+
+function QuickClearToast(toast) {
+    toast.toast.classList.add("quickClear");
+    toast.timeoutId = setTimeout(() => {
+        const p = toast.toast;
+        const k = toast.key;
+        if (p?.parentElement)
+            p.parentElement.removeChild(p);
+        delete keyedToasts[k];
+    }, 1000)
 }
 
 
@@ -4141,7 +4125,7 @@ if (!Array.prototype.last) {
     };
 };
 
-function FindJobWith(name) {
+function FindJobsWith(name) {
     var low = name.toLocaleLowerCase();
     return jobs.filter(j => j.name.toLocaleLowerCase().includes(low) || j.jobTypeName.toLocaleLowerCase().includes(low));
 }
@@ -4451,13 +4435,21 @@ function CompleteJobInfos(job) {
 
             if (jnl.includes(" ballista parts")) {
                 newOut.item = gm.items["BALLISTAPARTS"];
-                job.material_category = ["WOOD"]
+                if (jnl.includes("adamantine")) {
+                    job.material = "INORGANIC:ADAMANTINE"
+                } else {
+                    job.material_category = ["WOOD"]
+                }
                 return;
             }
 
             if (jnl.includes(" catapult parts")) {
                 newOut.item = gm.items["CATAPULTPARTS"];
-                job.material_category = ["WOOD"]
+                if (jnl.includes("adamantine")) {
+                    job.material = "INORGANIC:ADAMANTINE"
+                } else {
+                    job.material_category = ["WOOD"]
+                }
                 return;
             }
 
@@ -5035,9 +5027,28 @@ function NoS(str) {
     return str;
 }
 
-function SometimtesNoS(str) {
+function SometimesNoS(str) {
+    //Dwarf fortress naming unconventions shenanigans...
     if (str == "BLOCKS")
         return str;
+
+    if (str == "SIEGE_AMMO")
+        return "SIEGEAMMO"
+
+    if (str.startsWith("TRAPPART"))
+        return "TRAPPARTS"
+
+    if (str == "PANTS")
+        return "PANTS"
+
+    if (str == "GLOVES")
+        return "GLOVES"
+
+    if (str == "BOLT_THROWER_PARTS")
+        return "BOLT_THROWER_PARTS"
+
+    if (str.startsWith("BALLISTAPART"))
+        return "BALLISTAPARTS"
 
     if (str.endsWith("S") || str.endsWith("s"))
         return str.substr(0, str.length - 1);
@@ -5046,9 +5057,6 @@ function SometimtesNoS(str) {
 }
 
 function GetJobFromOrder(order) {
-    if (order.jobInfo)
-        return order.jobInfo;
-
     var jbs = jobs.filter(j => j.jobTypeName == order.job);
 
     if (order.reaction)
@@ -5087,8 +5095,11 @@ function GetJobFromOrder(order) {
         var caillou = order.material.split(":")[1].toLocaleLowerCase().replace("_", " ");
         jbs = jbs.filter(j => j.name.includes(caillou));
     } else {
-        if (order.material)
+        if (order.material) {
             jbs = jbs.filter(j => j.material == order.material || j.material_category && j.material_category.includes(order.material.toLowerCase()));
+        } else if (order.material_category && order.material_category.length > 0) {
+            jbs = jbs.filter(j => j.material_category && j.material_category.includes(order.material_category[0].toLowerCase()));
+        }
     }
 
     if (jbs.length == 1) {
@@ -5126,8 +5137,9 @@ function OrderToolStopMe() {
     if (!currentHoverOrder)
         return;
 
-    if (IsTaskPaused(currentHoverOrder, PAUSECHANNEL_ONETASK)) {
+    if (IsTaskPaused(currentHoverOrder, PAUSECHANNEL_ANY)) {
         ResumeTask(currentHoverOrder, PAUSECHANNEL_ONETASK);
+        ResumeTask(currentHoverOrder, PAUSECHANNEL_ALLSTASKS);
     } else {
         PauseTask(currentHoverOrder, PAUSECHANNEL_ONETASK);
     }
@@ -5195,6 +5207,10 @@ function ConditionCoderFocused() {
 }
 
 function GetJobItem(job) {
+    if (!job) {
+        Trace("GetJobItem: job is null");
+        return null;
+    }
     return job.io?.out?.[0]?.item;
 }
 
@@ -5288,8 +5304,8 @@ function GetStockPool() {
 
 function GetDisplaybaleMaterialsPool() {
     var mats = [...stocksMaterials];
-    if (!config.toggleHideMissingItems || forceAllItemsVisible)
-        mats.push(...jobsMaterials);
+    //if (!config.toggleHideMissingItems || forceAllItemsVisible)
+    mats.push(...jobsMaterials);
 
     mats = Array.from(new Set(mats));
 
@@ -5301,8 +5317,9 @@ function GetDisplaybaleMaterialsPool() {
 
 
 
-function ToggleMissingItems() {
-    ToggleOption('hideMissingItems')
+function ToggleMissingItems(noToggle) {
+    if (!noToggle)
+        ToggleOption('hideMissingItems')
     RefreshStocksFilter();
 }
 
@@ -5531,11 +5548,11 @@ function GetOrderProducedItem(order) {
     if (job.jobTypeName == "PrepareMeal") {
         switch (order.meal_ingredients) {
             case 2:
-                return gm.items["ITEM_FOOD_BISCUITS"];
+                return gm.items["FOOD!ITEM_FOOD_BISCUITS"];
             case 3:
-                return gm.items["ITEM_FOOD_STEW"];
+                return gm.items["FOOD!ITEM_FOOD_STEW"];
             case 4:
-                return gm.items["ITEM_FOOD_ROAST"];
+                return gm.items["FOOD!ITEM_FOOD_ROAST"];
         }
     }
 
@@ -5680,7 +5697,7 @@ function GetOrderOutputItemCondition(order) {
             (
                 ((cond.item_subtype?.toUpperCase() ?? "") == (outItem.subtypeName?.toUpperCase() ?? ""))
                 &&
-                ((cond.item_type?.toUpperCase() ?? "") == (SometimtesNoS(outItem.typeName?.toUpperCase() ?? "")))
+                ((cond.item_type?.toUpperCase() ?? "") == (SometimesNoS(outItem.typeName?.toUpperCase() ?? "")))
             )
         )
     )

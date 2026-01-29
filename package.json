@@ -26,6 +26,7 @@
   },
   "homepage": "https://github.com/GitAlbino/df-pom#readme",
   "devDependencies": {
+    "@electron-forge/cli": "^7.11.1",
     "electron": "^39.2.6"
   },
   "dependencies": {

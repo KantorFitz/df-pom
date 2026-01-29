@@ -14,6 +14,7 @@ for k,v in pairs(jobs) do
         output = output .. '\"item_subtype\":' .. '\"' .. tostring(v.item_subtype) .. '\",'
         output = output .. '\"mat_type\":' .. '\"' .. tostring(v.mat_type) .. '\",'
         output = output .. '\"mat_index\":' .. '\"' .. tostring(v.mat_index) .. '\",'
+        
         local matCat = ''
         if df.job_material_category[v.material_category] ~= nil then
             matCat = tostring(df.job_material_category[v.material_category])
