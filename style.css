@@ -1,6 +1,7 @@
 html {
     height: 100%;
     width: 100%;
+    user-select: none;
 }
 
 * {
@@ -669,7 +670,13 @@ body {
         padding: 0px 20px;
         font-size: 15px;
         line-height: 150%;
+        max-width: 80vw;
         width: max-content !important;
+        cursor:auto;
+
+        a {
+            cursor: pointer;
+        }
 
         b {
             font-weight: normal;
@@ -2675,6 +2682,7 @@ body {
     justify-content: flex-start;
     opacity: 0.4;
     transition: opacity 0.2s;
+    user-select: auto;
 
     &:hover {
         opacity: 1;
@@ -2701,7 +2709,7 @@ body {
             bottom: 100%;
             min-width: 500px;
             width: auto;
-            max-width: none;
+            max-width: 500px;
         }
     }
 

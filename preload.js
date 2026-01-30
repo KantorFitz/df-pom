@@ -8,7 +8,8 @@ contextBridge.exposeInMainWorld("api", {
     GetSetConfig: (optionsObj) => ipcRenderer.invoke("GetSetConfig", optionsObj),
     GetStocks: () => ipcRenderer.invoke("GetStocks"),
     GetJobsInfos: () => ipcRenderer.invoke("GetJobsInfos"),
-    ResetAppPaths: () => ipcRenderer.invoke("ResetAppPaths"),
     GetGameStatus: () => ipcRenderer.invoke("GetGameStatus"),
     ResetApp: () => ipcRenderer.invoke("ResetApp"),
+    SetDFHackPath: () => ipcRenderer.invoke("SetDFHackPath"),
+    OpenLink: (link) => ipcRenderer.invoke("OpenLink", link),
 });

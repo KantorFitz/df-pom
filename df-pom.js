@@ -13,6 +13,7 @@ var copiedCondition = null;
 var mustReadOrders = false;
 var mustWriteOrders = false;
 var mustReadStocks = false;
+var lastError;
 
 var ordersTable;
 var allOrdersPaused = false;
@@ -107,18 +108,18 @@ var jobsMaterials = []
 
 var materialsGroups = [
     "ALL",
-    "STONE",
-    "METAL",
-    "GEM",
-    "FUEL",
-    "WOOD",
-    "LEATHER",
-    "GLASS",
-    "CERAMIC",
     "BONE",
+    "CERAMIC",
     "CLOTH",
-    "THREAD",
+    "FUEL",
+    "GEM",
+    "GLASS",
+    "LEATHER",
+    "METAL",
     "OTHER",
+    "STONE",
+    "THREAD",
+    "WOOD",
 ]
 
 var sideA;
@@ -135,9 +136,13 @@ document.addEventListener("mouseover", function (e) {
 });
 
 async function InitDOM() {
+    await GetConfig();
+    $("ver")[0].textContent = "v" + config.version;
     fileHandle = await window.api.GetFileHandle();
 
-    SetTab("inventory");
+    if (!(config.toggleTabInventory || config.toggleTabOrders || config.toggleTabJobs))
+        SetTab("inventory");
+
     sideA = $(".inventoryBody .itemsSide")[0];
     sideB = $(".inventoryBody .valuesSide")[0];
     inventoryStaticHeader = $(".inventoryTableHeader")[0];
@@ -166,8 +171,6 @@ async function InitData() {
 
     initToast = Toast("<i>Initializing...</i>", true);
     try {
-        await GetConfig();
-
         if (!config.disclaimerAccepted)
             $(".disclaimer")[0].classList.remove("hidden");
 
@@ -397,6 +400,7 @@ function CheckError(data, waitingToken) {
             const wt = waitingToken;
             PopInfo(d.title, d.msg, d.context, d.buttons, errorCallback, wt, d.icon);
         });
+        lastError = data.error;
         return true;
     }
 
@@ -822,7 +826,7 @@ function UpdateOrdersTable(updateSmeltingButtons = true) {
                     cell.appendChild(input);
 
                 }
-                input.value = order[property];
+                input.value = isNaN(order[property]) ? 0 : order[property];
 
             } else if (property == "item_conditions") {
 
@@ -1869,7 +1873,7 @@ function AddNewOrder(newOrder, afterOrder = null) {
 
 async function GetConfig() {
 
-    config = await window.api.GetSetConfig();
+    await CallGetSetConfig();
 
     var mustSave = false;
     if (config.selectedStocksMaterialsCols == undefined) {
@@ -1892,27 +1896,32 @@ async function GetConfig() {
     }
 
     if (mustSave)
-        config = await window.api.GetSetConfig(config);
+        CallGetSetConfig(config);
 
     return true;
 }
 
 async function SaveConfig() {
-    config = await window.api.GetSetConfig(config);
+    await CallGetSetConfig(config);
     return config;
+}
+
+
+async function CallGetSetConfig(newConfig) {
+    config = await window.api.GetSetConfig(newConfig);
 }
 
 async function ToggleOption(name, noSwitch = false) {
     name = name.charAt(0).toUpperCase() + name.slice(1);
     name = "toggle" + name;
 
+    await GetConfig();
+
     if (!config[name]) {
         config[name] = true;
     } else if (!noSwitch) {
         config[name] = !config[name];
     }
-
-    config = await window.api.GetSetConfig(config);
 
     if (CheckError(config))
         return;
@@ -1923,6 +1932,8 @@ async function ToggleOption(name, noSwitch = false) {
 
     if (name == "toggleAutoSaveOrders" && config.toggleAutoSaveOrders)
         QueueOrdersSave(true);
+
+    await SaveConfig();
 
     ApplyConfigClasses()
 }
@@ -1996,12 +2007,13 @@ async function CycleSizeMode(noChange) {
     if (previousSizeMode != undefined)
         $("body")[0].classList.remove("sizemode_" + previousSizeMode);
 
-    if (!noChange)
+    await GetConfig();
+    if (!noChange) {
         config.sizeMode++;
-
-    if (config.sizeMode > 3)
-        config.sizeMode = 0;
-    SaveConfig();
+        if (config.sizeMode > 3)
+            config.sizeMode = 0;
+        SaveConfig();
+    }
 
     $("body")[0].classList.add("sizemode_" + config.sizeMode);
     previousSizeMode = config.sizeMode;
@@ -2220,7 +2232,7 @@ function SetupOrderFromJob(order, job) {
 
 
 function GetOrderBatchSize() {
-    if (!config.orderBatchSize) {
+    if (!Number.isInteger(config.orderBatchSize) || config.orderBatchSize < 1) {
         config.orderBatchSize = 6;
         SaveConfig();
     }
@@ -2522,6 +2534,8 @@ function FinalizeStocksData() {
     stockArray.sort((a, b) => {
         return ItemNameWithoutPrefix(a.item).localeCompare(ItemNameWithoutPrefix(b.item));
     });
+
+    gm.yearTick = data.yearTick;
 
     stocks = {};
     stockArray.forEach(obj => {
@@ -2892,7 +2906,7 @@ function UpdateInventoryMaterialsPicker() {
     SortInventoryMaterialPicker();
 }
 
-async function ToggleInventoryMaterialSelected(mat, noBuild) {
+function ToggleInventoryMaterialSelected(mat, noBuild) {
     var option = $(".inventoryMaterialsPicker .materialOption[material='" + mat + "']")[0];
     var change = false;
     if (config.selectedStocksMaterialsCols.indexOf(mat) == -1) {
@@ -3689,10 +3703,6 @@ function OnGeneralKeyUp(e) {
             }
         }
 
-
-
-
-
         if (key == "q") {
             e.preventDefault();
             OpenMaterialsPicker();
@@ -3903,12 +3913,12 @@ function PopInfo(title, message, sub, buttons = null, closeCallback = null, wait
                     }
                     break;
 
-                case "RESET APP PATHS":
+                case "SET DFHACK PATH":
                     Trace("Resetting paths.");
-                    button.addEventListener("click", (e) => {
+                    button.addEventListener("click", async (e) => {
                         e.stopPropagation();
-                        ResetAppPaths();
-                        document.querySelector(".infoBox").remove();
+                        result = await window.api.SetDFHackPath();
+                        GetConfig();
                     });
                     break;
 
@@ -3952,13 +3962,6 @@ function ClosePopInfoWaiting(token) {
         box.remove();
     });
 }
-
-
-
-function ResetAppPaths() {
-    window.api.ResetAppPaths();
-};
-
 
 function AddKeyInfo(button, string) {
 
@@ -5701,4 +5704,8 @@ function GetOrderOutputItemCondition(order) {
             )
         )
     )
+}
+
+function OpenLink(link) {
+    window.api.OpenLink(link);
 }
