@@ -725,7 +725,6 @@ const CreateWindow = () => {
         height: config.windowPosition ? config.windowPosition.height : 800,
         x: config.windowPosition ? config.windowPosition.x : undefined,
         y: config.windowPosition ? config.windowPosition.y : undefined,
-        fullscreen: true,
         nodeIntegration: false,
         autoHideMenuBar: true,
         webPreferences: {

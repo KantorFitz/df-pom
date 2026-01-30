@@ -137,7 +137,7 @@ document.addEventListener("mouseover", function (e) {
 
 async function InitDOM() {
     await GetConfig();
-    $("ver")[0].textContent = "v" + config.version;
+    $("ver").forEach(el => el.textContent = "v" + config.version);
     fileHandle = await window.api.GetFileHandle();
 
     if (!(config.toggleTabInventory || config.toggleTabOrders || config.toggleTabJobs))
@@ -1877,7 +1877,9 @@ async function GetConfig() {
 
     var mustSave = false;
     if (config.selectedStocksMaterialsCols == undefined) {
-        config.selectedStocksMaterialsCols = [];
+        config.selectedStocksMaterialsCols = [
+            'ALL', 'WOOD', 'STONE', 'LEATHER', 'INORGANIC:BRONZE', 'INORGANIC:COPPER', 'INORGANIC:IRON', 'INORGANIC:STEEL'
+        ];
         mustSave = true;
     }
 
@@ -3145,6 +3147,17 @@ function InventoryMaterialsFilterChanged(filterValue) {
 }
 
 function SortInventoryMaterialPicker() {
+    //filter invalids out
+    config.selectedStocksMaterialsCols = config.selectedStocksMaterialsCols.filter(mat =>
+        mat == "ALL"
+        || mat == "BONE"
+        || mat == "LEATHER"
+        || mat == "OTHER"
+        || Object.keys(gm.materials).includes(mat)
+        || Object.keys(gm.material_types).includes(mat)
+    )
+
+
     //sort elements by .selcted
     var picker = $(".inventoryMaterialsPicker")[0];
     var options = Array.from(picker.querySelectorAll(".materialOption"));
