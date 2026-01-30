@@ -10,6 +10,8 @@ Only for Windows (for now?)
 Features:
 - Reads/writes orders and fetch inventory contents
 - Instant order creation from the stocks list (just put the number you want in stock and you're done)
+- Easy order priority change (drag & drop and buttons/shorcuts)
+- Easy smelting orders toggle
 - Quick item/jobs/materials search filter 
 - Duplicate orders removal
 - Keyboard shortcuts for ease of use (and to comply with DF tradition) and quick order creation
