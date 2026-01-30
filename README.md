@@ -1,8 +1,28 @@
 # df-pom
 An Electon app providing an improved interface to manage Dwarf Fortress' Fortress Mode Production Orders.
-
-DFPOM - Dwarf Fortress Production Orders Manager by Yatta/Albino
 Licensed under the Creative Commons Attribution-NonCommercial 4.0 International License.
+
+This tool is designed to reduce the pain of managing orders in game, especially managing long lists of orders, their priorities, and managing smelting orders.
+Only for Windows (for now?)
+
+/!\ This thing relies on the clipboard to exchange data with Dwarf Fortress. Expect disturbance while its running. See in-app disclaimer for more info /!\ 
+
+Features:
+- Reads/writes orders and fetch inventory contents
+- Instant order creation from the stocks list (just put the number you want in stock and you're done)
+- Quick item/jobs/materials search filter 
+- Duplicate orders removal
+- Keyboard shortcuts for ease of use (and to comply with DF tradition) and quick order creation
+- Manual custom orders creation tool
+- Easy setup
+
+How to use:
+- Start a DF Fortress game
+- Open orders > add job once and close it
+- The tool is ready
+Check the "?" buttons in-app for informations and usefull tips
+
+Somewhat tried to make an UI fitting DF's style.
 
 Discord: yattaalbino - mappa.yatta@gmail.com
 Git: GitAlbino/df-pom
