@@ -7,7 +7,6 @@ module.exports = {
     ignore: [
       /^\/.git$/,
       /^\/.github$/,
-      /^\/node_modules$/,
       /^\/out$/,
       /^\/testsExports$/,
       /^\/\.gitignore$/,
