@@ -7,6 +7,9 @@ Only for Windows (for now?)
 
 /!\ This thing relies on the clipboard to exchange data with Dwarf Fortress. Expect disturbance while its running. See in-app disclaimer for more info /!\ 
 
+Questions & Suggestions on discord : https://discord.gg/XXUqPFrY
+Please report bug on GitHub <3
+
 Features:
 - Reads/writes orders and fetch inventory contents
 - Instant order creation from the stocks list (just put the number you want in stock and you're done)
