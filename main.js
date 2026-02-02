@@ -759,7 +759,6 @@ const CreateWindow = () => {
 
     if (config?.windowState === "maximized") {
         mainWindow.once("ready-to-show", () => {
-            mainWindow.webContents.openDevTools();
             mainWindow.maximize()
         });
     }
