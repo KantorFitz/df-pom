@@ -120,7 +120,7 @@ const max_graphsRed = 1;
 const min_graphsSpan = 3;
 const max_graphsSpan = 1000;
 const min_graphsRate = 1;
-const max_graphsRate = 1200;
+const max_graphsRate = 1200 * 30;
 const min_graphsHeight = 30;
 const max_graphsHeight = 1000;
 const min_graphsWidth = 100;
@@ -2665,7 +2665,7 @@ function FinalizeStocksData() {
     gm.dayNumber = data.year * 336 + Math.floor(gm.yearTick / GetGraphsRate());
     gm.totalTicks = gm.year * 336 * 1200 + gm.yearTick;
 
-    if (lastGraphHistorySave != gm.totalTicks) {
+    if (lastGraphHistorySave + GetGraphsRate() <= gm.totalTicks) {
         Object.keys(stocks).forEach(itemName => {
             Object.keys(stocks[itemName]).forEach(mat => {
                 let key = itemName + "@" + mat;
