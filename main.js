@@ -1,12 +1,8 @@
-const { app, BrowserWindow, shell, ipcMain, dialog, globalShortcut, clipboard } = require("electron");
-const { autoUpdater } = require('electron-updater');
+const { app, BrowserWindow, shell, autoUpdater, ipcMain, dialog, globalShortcut, clipboard } = require("electron");
 const log = require('electron-log');
 const { version } = require('./package.json');
 console.log('App version:', version);
 
-// Configure auto-updater logging
-autoUpdater.logger = log;
-autoUpdater.logger.transports.file.level = 'debug';
 log.info('App starting, version:', version);
 
 const path = require("path");
@@ -112,18 +108,31 @@ app.whenReady().then(async () => {
     if (config.autoUpdate)
     {
         log.info('Auto-update enabled, configuring...');
-        autoUpdater.setFeedURL({
-            provider: 'github',
-            owner: 'GitAlbino',
-            repo: 'df-pom'
+
+        const server = 'https://update.electronjs.org';
+        const feedURL = `${server}/GitAlbino/df-pom/${process.platform}-${process.arch}/${version}`;
+        autoUpdater.setFeedURL(feedURL);
+        log.info('Feed URL set to:', feedURL);
+
+        autoUpdater.on('error', (err) => {
+            log.error('AutoUpdater error:', err);
         });
-        autoUpdater.allowPrerelease = true;
+
+        autoUpdater.on('update-available', () => {
+            log.info('Update available, downloading...');
+        });
+
+        autoUpdater.on('update-not-available', () => {
+            log.info('No update available');
+        });
+
+        autoUpdater.on('update-downloaded', () => {
+            log.info('Update downloaded, will install on quit');
+            autoUpdater.quitAndInstall();
+        });
+
         log.info('Checking for updates...');
-        autoUpdater.checkForUpdatesAndNotify().then((result) => {
-            log.info('Update check result:', result);
-        }).catch((err) => {
-            log.error('Update check failed:', err);
-        });
+        autoUpdater.checkForUpdates();
     }
 
     CreateWindow();
