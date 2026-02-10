@@ -689,7 +689,7 @@ body {
         cursor: auto;
 
         &.rightSide {
-            right:0;
+            right: 0;
         }
 
         a {
@@ -1932,7 +1932,7 @@ body {
                                 }
 
                                 &.forceShow {
-                                    display: block!important;
+                                    display: block !important;
                                 }
 
                                 &.editable {
@@ -2706,6 +2706,39 @@ body {
                 color: var(--color-1a);
                 margin: 2px 5px;
                 min-width: 120px;
+            }
+
+            input[type=checkbox] {
+                width: 0px;
+                height: 20px;
+                overflow: visible;
+                opacity: 0.75;
+
+                &::before {
+                    position: absolute;
+                    content: "OFF";
+                    display: block;
+                    width: 40px;
+                    height: 20px;
+                    line-height: 20px;
+                    text-align: center;
+                    color: var(--color-txtj);
+                    background-color: var(--color-txte);
+                    border-radius: 4px;
+                    cursor: pointer;
+                }
+
+                &:hover {
+                   opacity: 1;
+                }
+
+
+                &:checked::before {
+                    content: "ON";
+                    background-color: var(--color-1a);
+                    color: var(--color-txtj);
+                }
+
             }
 
             &>div {

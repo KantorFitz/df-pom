@@ -336,6 +336,14 @@
 
 			<div class="settingsTab">
 				<div class="settingsContent" onmouseup="event.stopPropagation();">
+					<h2>General</h2>
+					<div class="setting">
+						<p>Update on start</p>
+						<div>
+							<input type="checkbox" id="config_autoUpdate" onchange="SaveSetting('autoUpdate',this.checked)" />
+							<span>Check for updates automatically when the app starts</span>
+						</div>
+					</div>
 					<h2>Orders</h2>
 					<div class="setting">
 						<p>Batch Size</p>

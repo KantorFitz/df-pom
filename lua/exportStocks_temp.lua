@@ -77,7 +77,6 @@ output = output .. 'yearTick=' .. tostring(df.global.cur_year_tick) .. '/'
 
 for key, value in pairs(counts) do
 	output = output .. value.. '*'.. key .. '/'
-	print(key .. ': ' .. value)
 end
 
 dfhack.internal.setClipboardTextCp437(output)

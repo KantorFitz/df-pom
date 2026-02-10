@@ -1,4 +1,5 @@
 const { app, BrowserWindow, shell, ipcMain, dialog, globalShortcut, clipboard } = require("electron");
+const { autoUpdater } = require('electron-updater');
 const { version } = require('./package.json');
 console.log('App version:', version);
 
@@ -32,6 +33,7 @@ var missingDFHackError = {
 
 
 function cl(msg) { console.log(msg); }
+
 
 function DFHackRunName() {
     return process.platform === 'win32' ? 'dfhack-run.exe' : 'dfhack-run';
@@ -101,6 +103,8 @@ app.whenReady().then(async () => {
 
     //read config file if exists
     await ReadConfig();
+    if (config.autoUpdate)
+        autoUpdater.checkForUpdatesAndNotify();
 
     CreateWindow();
 })
@@ -142,6 +146,7 @@ function CreateConfigFile() {
     config = {};
     config.ordersFilePath = "";
     config.dwarfPath = "";
+    config.autoUpdate = true;
     config.favoriteStockItems = [
         "BED",
         "TABLE",
