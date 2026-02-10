@@ -21,10 +21,10 @@ jobs:
         include:
           - os: windows-latest
             platform: win32
-            artifact-name: windows
+            artifact-name: windows_x64
           - os: ubuntu-latest
             platform: linux
-            artifact-name: linux
+            artifact-name: linux_x64
 
     runs-on: ${{ matrix.os }}
 
@@ -48,13 +48,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y rpm
 
+      - name: Get version from package.json
+        id: version
+        run: echo "version=v$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
       - name: Build
         run: npm run make -- --platform=${{ matrix.platform }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact-name }}
+          name: DF-Pom_${{ steps.version.outputs.version }}_${{ matrix.artifact-name }}
           path: |
             out/make/**/*.exe
             out/make/**/*.nupkg
