@@ -105,37 +105,41 @@ app.whenReady().then(async () => {
 
     //read config file if exists
     await ReadConfig();
-    if (config.autoUpdate)
-    {
-        log.info('Auto-update enabled, configuring...');
+    await CreateWindow();
 
-        const server = 'https://update.electronjs.org';
-        const feedURL = `${server}/GitAlbino/df-pom/${process.platform}-${process.arch}/${version}`;
-        autoUpdater.setFeedURL(feedURL);
-        log.info('Feed URL set to:', feedURL);
+    mainWindow.webContents.once('did-finish-load', () => {
+        if (config.autoUpdate) {
+            log.info('Auto-update enabled, configuring...');
 
-        autoUpdater.on('error', (err) => {
-            log.error('AutoUpdater error:', err);
-        });
+            const server = 'https://update.electronjs.org';
+            const feedURL = `${server}/GitAlbino/df-pom/${process.platform}-${process.arch}/${version}`;
+            autoUpdater.setFeedURL(feedURL);
+            log.info('Feed URL set to:', feedURL);
 
-        autoUpdater.on('update-available', () => {
-            log.info('Update available, downloading...');
-        });
+            autoUpdater.on('error', (err) => {
+                log.error('AutoUpdater error:', err);
+            });
 
-        autoUpdater.on('update-not-available', () => {
-            log.info('No update available');
-        });
+            autoUpdater.on('update-available', () => {
+                log.info('Update available, downloading...');
+                mainWindow.webContents.send('UpdateAvailable');
+            });
 
-        autoUpdater.on('update-downloaded', () => {
-            log.info('Update downloaded, will install on quit');
-            autoUpdater.quitAndInstall();
-        });
+            autoUpdater.on('update-not-available', () => {
+                log.info('No update available');
+            });
 
-        log.info('Checking for updates...');
-        autoUpdater.checkForUpdates();
-    }
+            autoUpdater.on('update-downloaded', () => {
+                log.info('Update downloaded, will install on quit');
+                autoUpdater.quitAndInstall();
+            });
 
-    CreateWindow();
+            log.info('Checking for updates...');
+            autoUpdater.checkForUpdates();
+        }
+    });
+
+
 })
 
 
@@ -767,7 +771,7 @@ function GetPathsReadyError() {
 }
 
 
-const CreateWindow = () => {
+async function CreateWindow() {
     mainWindow = new BrowserWindow({
         width: config.windowPosition ? config.windowPosition.width : 1000,
         height: config.windowPosition ? config.windowPosition.height : 800,

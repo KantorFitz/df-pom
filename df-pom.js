@@ -5548,6 +5548,9 @@ function CloseChangelog() {
     $(".changelog")[0].classList.add("hidden");
 }
 
+function CloseUpdateInfo() {
+    $(".updateInfo")[0].classList.add("hidden");
+}
 
 
 function ToggleSmelting(element, forceRemove) {
@@ -6197,7 +6200,12 @@ function SetGraphsSpanLabel() {
     totalTickSpan = totalTickSpan / day;
     spanText.innerText = totalTickSpan.toFixed(0) + " days";
 }
+
 function Interpolate(min, max, ratio) {
     ratio = Math.max(0, Math.min(1, ratio));
     return min + (max - min) * ratio;
 }
+
+window.api.UpdateAvailable(() => {
+    $(".updateInfo")[0].classList.remove("hidden");
+});

@@ -2874,7 +2874,8 @@ body {
 
 
 .disclaimer,
-.changelog {
+.changelog,
+.updateInfo {
     position: absolute;
     display: flex;
     z-index: 1000;
@@ -2885,8 +2886,14 @@ body {
     justify-content: center;
     align-items: center;
 
-    &.changelog {
+    &.changelog,
+    &.updateInfo {
         z-index: 900;
+    }
+    
+    &.updateInfo p {
+        max-width: 450px;
+        text-align: center;
     }
 
     .bg {
@@ -2904,7 +2911,7 @@ body {
     .content {
         display: flex;
         flex-direction: column;
-        padding: 30px 50px 25px;
+        padding: 30px 2vw 25px;
         max-width: 850px;
         color: var(--color-txta);
         background-color: var(--color-bgf);

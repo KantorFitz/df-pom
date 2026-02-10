@@ -12,4 +12,5 @@ contextBridge.exposeInMainWorld("api", {
     ResetApp: () => ipcRenderer.invoke("ResetApp"),
     SetDFHackPath: () => ipcRenderer.invoke("SetDFHackPath"),
     OpenLink: (link) => ipcRenderer.invoke("OpenLink", link),
+    UpdateAvailable: (handler) => ipcRenderer.on('UpdateAvailable', handler)
 });
