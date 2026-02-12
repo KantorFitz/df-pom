@@ -222,9 +222,6 @@
 		</div>
 
 		<div class='tabsHost'>
-			<div class='pleaseWait'>
-				<div>Loading data...</div>
-			</div>
 			<div class="toasts">
 				<!--
 				<button class='anchor'>
@@ -375,6 +372,13 @@
 						</div>
 					</div>
 					<div class="setting">
+						<p>Graph Auto Height</p>
+						<div>
+							<input type="checkbox" id="config_graphsDefaultAutoHeight" onchange="SaveSetting('graphsDefaultAutoHeight',this.checked)" />
+							<span>Set the default height of new graphs to '-1' : Automatic scale based on the highest value</span>
+						</div>
+					</div>
+					<div class="setting">
 						<p>Graph Width</p>
 						<div>
 							<input type="number" id="config_graphsWidth" onchange="SaveSetting('graphsWidth',this.value)" />
@@ -393,38 +397,6 @@
 
 		</div>
 
-
-		<div class='bottomLine'>
-			<div class="help">
-				<span>?</span>
-				<div class="infos">
-					<div><b>DFPOM <ver></ver></b> - <b>D</b>warf <b>F</b>ortress <b>P</b>roduction <b>O</b>rders <b>M</b>anager</div>
-					<div>Licensed under the Creative Commons Attribution-NonCommercial 4.0 International License.</div>
-					<div>By Yatta/Albino - Discord: yattaalbino - <a onclick="OpenLink('mailto:mappa.yatta@gmail.com')">mappa.yatta@gmail.com</a></div>
-					<div>Git: <a onclick="OpenLink('https://github.com/GitAlbino/df-pom')">GitAlbino/df-pom</a></div>
-					<div>Huge thanks to the DFHack team for their work, and to the DFHack community/discord (SilasD, Quietust, rome of oxtrot...) for their patient, reactive and insightful help.</div>
-					<div>Background illustration by AI :|</div>
-					<div><a onclick="ShowChangelog()">Changelog</a></div>
-					<div><a onclick="ShowDisclaimer()">Disclaimer</a></div>
-				</div>
-			</div>
-			<div>
-				<a class='kofi' onclick="OpenLink('https://ko-fi.com/J3J74D67O')" target="_blank" title="Support DFPOM development on Ko-fi">
-					<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#e3e3e3">
-						<path d="M160-120v-80h640v80H160Zm160-160q-66 0-113-47t-47-113v-400h640q33 0 56.5 23.5T880-760v120q0 33-23.5 56.5T800-560h-80v120q0 66-47 113t-113 47H320Zm0-80h240q33 0 56.5-23.5T640-440v-320H240v320q0 33 23.5 56.5T320-360Zm400-280h80v-120h-80v120ZM320-360h-80 400-320Z" />
-					</svg>
-					<span>Support this!</span>
-				</a>
-			</div>
-			<div>
-				DFPOM version
-				<ver></ver>
-			</div>
-			<div>
-				- <a onclick="OpenLink('https://discord.gg/XXUqPFrY')"><b>DF-Pom Discord</b> for help/suggestions</a>
-			</div>
-
-		</div>
 	</div>
 
 
@@ -693,6 +665,42 @@
 				<button onclick="CloseUpdateInfo()">OK</button>
 			</div>
 		</div>
+	</div>
+
+	<div class='bottomLine'>
+		<div class="help">
+			<span>?</span>
+			<div class="infos">
+				<div><b>DFPOM <ver></ver></b> - <b>D</b>warf <b>F</b>ortress <b>P</b>roduction <b>O</b>rders <b>M</b>anager</div>
+				<div>Licensed under the Creative Commons Attribution-NonCommercial 4.0 International License.</div>
+				<div>By Yatta/Albino - Discord: yattaalbino - <a onclick="OpenLink('mailto:mappa.yatta@gmail.com')">mappa.yatta@gmail.com</a></div>
+				<div>Git: <a onclick="OpenLink('https://github.com/GitAlbino/df-pom')">GitAlbino/df-pom</a></div>
+				<div>Huge thanks to the DFHack team for their work, and to the DFHack community/discord (SilasD, Quietust, rome of oxtrot...) for their patient, reactive and insightful help.</div>
+				<div>Background illustration by AI :|</div>
+				<div><a onclick="ShowChangelog()">Changelog</a></div>
+				<div><a onclick="ShowDisclaimer()">Disclaimer</a></div>
+			</div>
+		</div>
+		<div>
+			<a class='kofi' onclick="OpenLink('https://ko-fi.com/J3J74D67O')" target="_blank" title="Support DFPOM development on Ko-fi">
+				<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#e3e3e3">
+					<path d="M160-120v-80h640v80H160Zm160-160q-66 0-113-47t-47-113v-400h640q33 0 56.5 23.5T880-760v120q0 33-23.5 56.5T800-560h-80v120q0 66-47 113t-113 47H320Zm0-80h240q33 0 56.5-23.5T640-440v-320H240v320q0 33 23.5 56.5T320-360Zm400-280h80v-120h-80v120ZM320-360h-80 400-320Z" />
+				</svg>
+				<span>Support this!</span>
+			</a>
+		</div>
+		<div>
+			| DFPOM version
+			<ver></ver>
+		</div>
+		<div>
+			| <a onclick="OpenLink('https://discord.gg/XXUqPFrY')"><b>DF-Pom Discord</b> for help/suggestions</a>
+		</div>
+
+	</div>
+
+	<div class='pleaseWait'>
+		<div>Loading data...</div>
 	</div>
 
 </body>

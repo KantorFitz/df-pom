@@ -108,6 +108,8 @@ app.whenReady().then(async () => {
     await CreateWindow();
 
     mainWindow.webContents.once('did-finish-load', () => {
+        mainWindow.setTitle("DF-Pom | v" + version);
+
         if (config.autoUpdate) {
             log.info('Auto-update enabled, configuring...');
 
@@ -180,6 +182,7 @@ function CreateConfigFile() {
     config.ordersFilePath = "";
     config.dwarfPath = "";
     config.autoUpdate = true;
+    config.graphsDefaultAutoHeight = true;
     config.favoriteStockItems = [
         "BED",
         "TABLE",

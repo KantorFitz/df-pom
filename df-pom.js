@@ -388,7 +388,10 @@ document.addEventListener("wheel", e => {
             delta *= 5;
         var curVal = e.target.value;
         curVal = curVal === "" ? 0 : curVal;
-        var newValue = Math.max(0, parseInt(curVal) - delta);
+        let min = 0;
+        if (e.target.classList.contains("graphScale"))
+            min = -1;
+        var newValue = Math.max(min, parseInt(curVal) - delta);
         e.target.value = newValue;
         var event = new Event('change');
         e.target.dispatchEvent(event);
@@ -2849,7 +2852,7 @@ function CreateStockCell(item, material) {
             const k = key;
             e.stopPropagation();
             cl(itemJob[k] ? GetOrderTargetQtt(FindOrdersForJob(itemJob[k])[0]) : null);
-            ToggleDisplayGraph(graphKey, itemJob[k] ? GetOrderTargetQtt(FindOrdersForJob(itemJob[k])[0]) : null);
+            ToggleDisplayGraph(graphKey, null);
         });
 
         if (!itemJob[key]) {
@@ -5966,8 +5969,12 @@ function CreateGraph(key, maxValue = null) {
     if (graphBoxes[key])
         return graphBoxes[key];
 
+    let parts = key.split("@");
+    let itemName = StockEntryLabel(parts[0], true);
+
     let div = document.createElement("div");
     {
+        div.setAttribute("title", itemName);
         div.classList.add("graph");
         div.setAttribute("data-graphKey", key);
 
@@ -5975,23 +5982,24 @@ function CreateGraph(key, maxValue = null) {
         svgHost.classList.add("svgHost");
         div.appendChild(svgHost);
 
-        let span = document.createElement("span");
-        let parts = key.split("@");
-        let itemName = StockEntryLabel(parts[0], true);
-        div.appendChild(span);
+        let p = document.createElement("p");
+        div.appendChild(p);
         {
-            span.classList.add("dataName");
+            p.classList.add("dataName");
             if (parts.length > 1) {
-                span.innerHTML = itemName + " <i>" + parts[1] + "</i>";
+                p.innerHTML = itemName + " <i>" + parts[1] + "</i>";
             } else {
-                span.innerHTML = itemName;
+                p.innerHTML = itemName;
             }
-            span.onclick = () => {
+            p.onclick = () => {
                 $("#generalFilter")[0].value = itemName;
                 $("#generalFilter")[0].dispatchEvent(new Event("change"));
             };
         }
-        div.setAttribute("title", itemName);
+
+        let span = document.createElement("span");
+        div.appendChild(span);
+        span.classList.add("qtt");
 
         span = document.createElement("span");
         div.appendChild(span);
@@ -6001,8 +6009,7 @@ function CreateGraph(key, maxValue = null) {
             span.appendChild(input);
             {
                 input.type = "number";
-                input.classList.add("inputNumber");
-                input.value = maxValue ?? GetDefaultGraphMax();
+                input.classList.add("inputNumber", "graphScale");
                 input.addEventListener("keyup", (e) => { SetGraphMax(key, e.target.value); });
                 input.addEventListener("change", (e) => { SetGraphMax(key, e.target.value); });
                 input.setAttribute("title", "Set the maximum value of the graph. If the stock values exceed this value, the graph will display a dashed line.");
@@ -6021,9 +6028,7 @@ function CreateGraph(key, maxValue = null) {
     }
     document.querySelector(".graphsContent").appendChild(div);
 
-    config.graphs[key] = {
-        max: maxValue ?? GetDefaultGraphMax()
-    }
+    SetGraphMax(key, maxValue, false);
     SaveConfig();
 
     graphBoxes[key] = div;
@@ -6056,13 +6061,14 @@ function CheckNoGraphs() {
 }
 
 function DrawGraph(key) {
+
     var graph = config.graphs[key];
-    CreateGraph(key, graph ? graph.max : null);
-    var svgHost = document.querySelector(".graph[data-graphKey='" + key + "'] .svgHost");
+    let svgHost = CreateGraph(key, graph ? graph.max : null)?.querySelector(".svgHost");
     if (!svgHost) {
         Trace("Could not find graph " + key);
         return;
     }
+
     let sHisto = stocksHistory[key];
     let noHisto = false;
     if (!stocksHistory[key]) {
@@ -6070,7 +6076,6 @@ function DrawGraph(key) {
         noHisto = true;
     }
 
-    let max = graph.max;
     //prepend history with -1 values if history is shorter than graphsSpan
     let length = GetGraphsSpan();
     let drawnPoints = Array.from(sHisto);
@@ -6081,6 +6086,15 @@ function DrawGraph(key) {
     while (drawnPoints.length > length) {
         drawnPoints.shift();
     }
+
+    var graphDiv = graphBoxes[key];
+    let max = graph.max;
+    graphDiv.querySelector(".graphScale").value = max;
+
+    graphDiv.classList.toggle("autoHeight", max < 0);
+    if (max < 0)
+        max = drawnPoints.length > 0 ? Math.max(...drawnPoints) : 1;
+    max = Math.max(1, max);
 
     let w = GetGraphWidth();
     let h = GetGraphHeight();
@@ -6104,12 +6118,12 @@ function DrawGraph(key) {
         return (index === 0 ? "M " : "L ") + point.x + " " + point.y;
     }).join(" ");
 
-
-    document.querySelector(".graph[data-graphKey='" + key + "']").style.minWidth = (w + 6) + "px";
-    document.querySelector(".graph[data-graphKey='" + key + "']").style.maxWidth = (w + 6) + "px";
-    document.querySelector(".graph[data-graphKey='" + key + "']").style.background = "rgba(" + Interpolate(34, 120, lastRatio) + "," + Interpolate(34, 0, lastRatio) + "," + Interpolate(34, 0, lastRatio) + ",0.6)"
+    graphDiv.style.minWidth = (w + 6) + "px";
+    graphDiv.style.maxWidth = (w + 6) + "px";
+    graphDiv.style.background = "rgba(" + Interpolate(34, 120, lastRatio) + "," + Interpolate(34, 0, lastRatio) + "," + Interpolate(34, 0, lastRatio) + ",0.6)"
     svgHost.style.height = (h + 12) + "px";
     //if not solid make dashed line
+    graphDiv.querySelector(".qtt").innerText = Math.max(0, sHisto.last());
 
     let strokeDasharray = solid ? "none" : "5 5";
 
@@ -6125,6 +6139,7 @@ function DrawGraph(key) {
 
 function ToggleDisplayGraph(key, maxValue = null) {
     config.graphs ??= {};
+
     if (!config.graphs[key]) {
         CreateGraph(key, maxValue);
     } else {
@@ -6137,12 +6152,23 @@ function ToggleDisplayGraph(key, maxValue = null) {
     RedrawGraphs()
 }
 
+function SetGraphMax(key, value, redraw = true) {
 
-function SetGraphMax(key, value) {
-    var graph = config.graphs[key];
-    graph.max = Math.max(1, value);
+    if (value == null) {
+        if (config.graphsDefaultAutoHeight) {
+            value = -1;
+        } else {
+            value = GetDefaultGraphMax();
+        }
+    }
+    value = Math.max(-1, value);
+
+    config.graphs[key] = config.graphs[key] || {};
+    config.graphs[key].max = value;
+
     SaveConfig();
-    DrawGraph(key);
+    if (redraw)
+        DrawGraph(key);
 }
 
 function GetGraphsSpan() {
