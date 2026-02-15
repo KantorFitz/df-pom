@@ -42,3 +42,8 @@
 ## [0.2.0] - 2026-02-10
 - Added autoupdate support
 - Renamed release files
+
+## [0.2.1] - 2026-02-15
+- Stability and performance improvements (thanks to KantorFitz)
+- Fixed Discord links (thanks to Ilya)
+
