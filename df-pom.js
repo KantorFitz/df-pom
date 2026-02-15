@@ -263,23 +263,36 @@ function QueueStocksRead(immediate = false, showToast = false) {
         TryReadStocks();
 }
 
+let m_autoUpdateRunning = false;
+
 async function DataAutoUpdater() {
-    if (initDone) {
+    // Prevent concurrent execution
+    if (m_autoUpdateRunning)
+        return;
 
-        if (lastGameStatusCheck < Date.now() - 1500) {
-            lastGameStatusCheck = Date.now();
-            ok = await GetGameStatus();
-            if (!ok) {
-                //game closed
-                ResetApp();
-                return;
+    m_autoUpdateRunning = true;
+
+    try {
+        if (initDone) {
+            // Check game status every 1500ms
+            if (lastGameStatusCheck < Date.now() - 1500) {
+                lastGameStatusCheck = Date.now();
+                const ok = await GetGameStatus();
+                if (!ok) {
+                    return; // Skip operations if game status check fails
+                }
             }
-        }
 
-        await TryReadWriteOrders();
-        await TryReadStocks();
+            await TryReadWriteOrders();
+            await TryReadStocks();
+        }
+    } catch (e) {
+        console.error("Error in DataAutoUpdater:", e);
+    } finally {
+        m_autoUpdateRunning = false;
     }
 
+    // Schedule next cycle 150ms after THIS cycle completes
     setTimeout(DataAutoUpdater, 150);
 }
 
@@ -5872,6 +5885,9 @@ function GetItemSimpleName(item) {
 }
 
 function GetItemTypeAndSubName(item) {
+    if (item == undefined)
+        return ""; 
+
     var key = item.typeName ? item.typeName + "!" + item.subtypeName : item.subtypeName;
     if (item.isTypeOnly)
         key = item.typeName;

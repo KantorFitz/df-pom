@@ -24,6 +24,11 @@ var jobsInfosStartIndex = 0;
 var jobsInfosMaxScans = 1000;
 var gameInfoLuaUpdated = false;
 
+// Helper function to add delay for clipboard synchronization
+function pause(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 var missingDFHackError = {
     error: {
         title: "DFHack required",
@@ -251,18 +256,38 @@ async function SetPath() {
     return true;
 }
 
-ipcMain.handle("GetGameStatus", async (e) => {
-    var pathError = GetPathsReadyError();
-    if (pathError) {
-        resolve(pathError);
-        return;
+function parseClipboardData(rawData) {
+    // Check if clipboard is empty
+    if (!rawData || rawData.trim() === "") {
+        throw new Error("Clipboard is empty - DFHack Lua script did not write data. Is Dwarf Fortress running?");
     }
+    
+    // Check for stock data format first (more specific)
+    if (/^lastIndex=\d+\/year=\d+\/yearTick=\d+\//.test(rawData)) {
+        return ProcessStockData(rawData);
+    }
+    
+    // Try JSON parsing
+    try {
+        rawData = rawData.replace(/(,)+}/g, "}");
+        rawData = rawData.replace(/(,)+]/g, "]");
+        return JSON.parse(rawData);
+    } catch (e) {
+        throw new Error("Data is neither valid JSON nor stock format: " + e.message);
+    }
+}
 
+ipcMain.handle("GetGameStatus", async (e) => {
     return new Promise(async (resolve, reject) => {
+        var pathError = GetPathsReadyError();
+        if (pathError) {
+            resolve(pathError);
+            return;
+        }
+
         let dfhackPath = path.join(config.dwarfPath, DFHackRunName());
 
         let luaScriptPath = path.join(GetDataPath(), "lua", "gameStatus.lua");
-        cl("Executing dfhack-run... " + luaScriptPath);
         let args = ["lua", "-f", luaScriptPath];
 
         fs.access(dfhackPath, fs.constants.F_OK | fs.constants.X_OK, (err) => {
@@ -272,8 +297,26 @@ ipcMain.handle("GetGameStatus", async (e) => {
             }
 
             var oldClipboard = clipboard.readText();
-            execFile(dfhackPath, args, (error, stdout, stderr) => {
-                let data = clipboard.readText();
+            execFile(dfhackPath, args, async (error, stdout, stderr) => {
+                await pause(200);
+                
+                // Try to extract data from stdout first (marked with DFPOM_STATUS_JSON:)
+                let data = null;
+                if (stdout && stdout.includes("DFPOM_STATUS_JSON:")) {
+                    let lines = stdout.split("\n");
+                    for (let line of lines) {
+                        if (line.includes("DFPOM_STATUS_JSON:")) {
+                            data = line.substring(line.indexOf("DFPOM_STATUS_JSON:") + "DFPOM_STATUS_JSON:".length).trim();
+                            break;
+                        }
+                    }
+                }
+                
+                // If not in stdout, try clipboard
+                if (!data) {
+                    data = clipboard.readText();
+                }
+                
                 clipboard.writeText(oldClipboard);
 
                 if (error) {
@@ -292,12 +335,23 @@ ipcMain.handle("GetGameStatus", async (e) => {
                 }
 
                 try {
-                    data = data.replace(/(,)+}/g, "}");
-                    data = data.replace(/(,)+]/g, "]");
-                    data = JSON.parse(data);
+                    
+                    data = parseClipboardData(data);
                     resolve(data);
 
                 } catch (e) {
+                    // If clipboard is empty, it means DF isn't running - return waiting status instead of error
+                    if (e.message.includes("Clipboard is empty")) {
+                        data = {
+                            isFortress: false,
+                            site: "nil",
+                            paused: false,
+                            workOrderConditionOpen: false
+                        };
+                        resolve(data);
+                        return;
+                    }
+                    
                     data = {
                         error: {
                             title: "Data parsing error",
@@ -322,17 +376,16 @@ ipcMain.handle("GetGameStatus", async (e) => {
 
 
 ipcMain.handle("GetGameInfos", async (e) => {
-    var pathError = GetPathsReadyError();
-    if (pathError) {
-        resolve(pathError);
-        return;
-    }
-
     if (readingStuff)
         return "wait"
     readingStuff = true;
 
     return new Promise(async (resolve, reject) => {
+        var pathError = GetPathsReadyError();
+        if (pathError) {
+            resolve(pathError);
+            return;
+        }
         let dfhackPath = path.join(config.dwarfPath, DFHackRunName());
 
         let luaScriptUsePath = path.join(GetDataPath(), "lua", "gameInfo_use.lua");
@@ -360,7 +413,8 @@ ipcMain.handle("GetGameInfos", async (e) => {
             }
 
             var oldClipboard = clipboard.readText();
-            execFile(dfhackPath, args, (error, stdout, stderr) => {
+            execFile(dfhackPath, args, async (error, stdout, stderr) => {
+                await pause(200);
                 if (error) {
                     data = {
                         error: {
@@ -376,16 +430,35 @@ ipcMain.handle("GetGameInfos", async (e) => {
                 }
 
                 try {
-                    //read from clipboard file
-                    let data = clipboard.readText();
+                    // Try to extract data from stdout first (marked with DFPOM_GAMEINFO_JSON:)
+                    let data = null;
+                    if (stdout && stdout.includes("DFPOM_GAMEINFO_JSON:")) {
+                        let lines = stdout.split("\n");
+                        for (let line of lines) {
+                            if (line.includes("DFPOM_GAMEINFO_JSON:")) {
+                                data = line.substring(line.indexOf("DFPOM_GAMEINFO_JSON:") + "DFPOM_GAMEINFO_JSON:".length).trim();
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // If not in stdout, try clipboard
+                    if (!data) {
+                        data = clipboard.readText();
+                    }
+                    
                     clipboard.writeText(oldClipboard);
                     //replace ",}" with "}" to fix invalid JSON
-                    data = data.replace(/(,)+}/g, "}");
-                    data = data.replace(/(,)+]/g, "]");
-                    data = JSON.parse(data);
+                    data = parseClipboardData(data);
                     resolve(data);
 
                 } catch (e) {
+                    // If clipboard is empty, return "wait" instead of error to avoid triggering reset
+                    if (e.message.includes("Clipboard is empty")) {
+                        resolve("wait");
+                        return;
+                    }
+                    
                     data = {
                         error: {
                             title: "Data parsing error",
@@ -408,18 +481,17 @@ ipcMain.handle("GetGameInfos", async (e) => {
 
 
 ipcMain.handle("GetJobsInfos", async () => {
-    var pathError = GetPathsReadyError();
-    if (pathError) {
-        resolve(pathError);
-        return;
-    }
-
     if (readingStuff)
         return "wait"
 
     readingStuff = true;
 
     return new Promise(async (resolve, reject) => {
+        var pathError = GetPathsReadyError();
+        if (pathError) {
+            resolve(pathError);
+            return;
+        }
         let dfhackPath = path.join(config.dwarfPath, DFHackRunName());
 
         //read template
@@ -439,10 +511,12 @@ ipcMain.handle("GetJobsInfos", async () => {
         fs.access(dfhackPath, fs.constants.F_OK | fs.constants.X_OK, (err) => {
             if (err) {
                 resolve(GetMissingDFHackError("GetJobsInfos1"));
+                return;
             }
 
             var oldClipboard = clipboard.readText();
-            execFile(dfhackPath, args, (error) => {
+            execFile(dfhackPath, args, async (error, stdout, stderr) => {
+                await pause(50);
                 if (error) {
                     data = {
                         error: {
@@ -458,8 +532,24 @@ ipcMain.handle("GetJobsInfos", async () => {
                 }
 
                 try {
-                    //read from clipboard file
-                    let data = clipboard.readText();
+                    // Try to extract data from stdout first (marked with DFPOM_JOBINFOS_JSON:)
+                    let data = null;
+                    if (stdout && stdout.includes("DFPOM_JOBINFOS_JSON:")) {
+                        let lines = stdout.split("\n");
+                        for (let line of lines) {
+                            if (line.includes("DFPOM_JOBINFOS_JSON:")) {
+                                data = line.substring(line.indexOf("DFPOM_JOBINFOS_JSON:") + "DFPOM_JOBINFOS_JSON:".length).trim();
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // If not in stdout, try clipboard
+                    if (!data) {
+                        data = clipboard.readText();
+                        cl("[GetJobsInfos] Clipboard: " + (data ? data.length + " chars" : "EMPTY"));
+                    }
+                    
                     clipboard.writeText(oldClipboard);
 
                     data = data.replace(/,}/g, "}");
@@ -501,17 +591,16 @@ ipcMain.handle("GetJobsInfos", async () => {
 
 
 ipcMain.handle("GetStocks", async () => {
-    var pathError = GetPathsReadyError();
-    if (pathError) {
-        resolve(pathError);
-        return;
-    }
-
     if (readingStuff)
         return "wait"
     readingStuff = true;
 
     return new Promise(async (resolve, reject) => {
+        var pathError = GetPathsReadyError();
+        if (pathError) {
+            resolve(pathError);
+            return;
+        }
         let dfhackPath = path.join(config.dwarfPath, DFHackRunName());
 
         //read template
@@ -532,7 +621,8 @@ ipcMain.handle("GetStocks", async () => {
             }
 
             var oldClipboard = clipboard.readText();
-            execFile(dfhackPath, args, async (error) => {
+            execFile(dfhackPath, args, async (error, stdout, stderr) => {
+                await pause(50);
                 if (error) {
                     data = {
                         error: {
@@ -548,8 +638,24 @@ ipcMain.handle("GetStocks", async () => {
                 }
 
                 try {
-                    //read from clipboard file
-                    let data = ProcessStockData(clipboard.readText())
+                    // Try to extract data from stdout first (marked with DFPOM_STOCKS:)
+                    let rawClipboard = null;
+                    if (stdout && stdout.includes("DFPOM_STOCKS:")) {
+                        let lines = stdout.split("\n");
+                        for (let line of lines) {
+                            if (line.includes("DFPOM_STOCKS:")) {
+                                rawClipboard = line.substring(line.indexOf("DFPOM_STOCKS:") + "DFPOM_STOCKS:".length).trim();
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // If not in stdout, try clipboard
+                    if (!rawClipboard) {
+                        rawClipboard = clipboard.readText();
+                    }
+                    
+                    let data = ProcessStockData(rawClipboard)
                     clipboard.writeText(oldClipboard);
                     if (Object.keys(data.stocks).length == 0) {
                         data = {
@@ -568,6 +674,13 @@ ipcMain.handle("GetStocks", async () => {
                     resolve(data);
 
                 } catch (e) {
+                    // If clipboard is empty, return "wait" instead of error/reject
+                    if (e.message.includes("Clipboard is empty")) {
+                        readingStuff = false;
+                        resolve("wait");
+                        return;
+                    }
+                    
                     if (error) {
                         data = {
                             error: {
@@ -594,12 +707,6 @@ ipcMain.handle("GetStocks", async () => {
 
 
 ipcMain.handle("ReadOrdersFile", async () => {
-    var pathError = GetPathsReadyError();
-    if (pathError) {
-        resolve(pathError);
-        return;
-    }
-
     if (readingStuff)
         return "wait"
 
@@ -608,6 +715,11 @@ ipcMain.handle("ReadOrdersFile", async () => {
     cl("Reading orders file...");
 
     return new Promise((resolve, reject) => {
+        var pathError = GetPathsReadyError();
+        if (pathError) {
+            resolve(pathError);
+            return;
+        }
         let dfhackPath = path.join(config.dwarfPath, DFHackRunName());
         let filename = path.basename(config.ordersFilePath, '.json');
         let args = ["orders", "export", filename];
@@ -669,16 +781,16 @@ ipcMain.handle("WriteOrdersFile", async (e, content) => {
 });
 
 async function SendToDF() {
-    var pathError = GetPathsReadyError();
-    if (pathError) {
-        resolve(pathError);
-        return;
-    }
-
     if (readingStuff)
         return "wait"
 
     readingStuff = true;
+
+    var pathError = GetPathsReadyError();
+    if (pathError) {
+        readingStuff = false;
+        return pathError;
+    }
 
     let dfhackPath = path.join(config.dwarfPath, DFHackRunName());
     let filename = path.basename(config.ordersFilePath, '.json');
