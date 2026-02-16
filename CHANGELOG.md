@@ -45,5 +45,7 @@
 
 ## [0.2.1] - 2026-02-15
 - Stability and performance improvements (thanks to KantorFitz)
+- Added automatic graph scale option (set graph scale to -1)
 - Fixed Discord links (thanks to Ilya)
+- App version more visible (helps bug reports)
 
