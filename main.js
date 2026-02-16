@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell, autoUpdater, ipcMain, dialog, globalShortcut, clipboard } = require("electron");
+const { app, BrowserWindow, shell, autoUpdater, ipcMain, dialog, globalShortcut } = require("electron");
 const log = require('electron-log');
 const { version } = require('./package.json');
 console.log('App version:', version);
@@ -8,9 +8,11 @@ log.info('App starting, version:', version);
 const path = require("path");
 const fs = require("fs");
 const { runInThisContext } = require("vm");
+const sqlite3 = require('sqlite3').verbose();
 const CONFIG_NAME = "dfpom-config.json";
 const ORDERS_NAME = "dfpom-orders.json";
 const CONFIG_PATH = path.join(app.getPath("userData"), CONFIG_NAME);
+const DB_PATH = path.join(app.getPath("userData"), "dfpom-data.db");
 const { execFile } = require('node:child_process');
 const { ref } = require("node:process");
 const { resolve } = require("node:dns");
@@ -23,10 +25,215 @@ var readingStuff = false;
 var jobsInfosStartIndex = 0;
 var jobsInfosMaxScans = 1000;
 var gameInfoLuaUpdated = false;
+let db = null;
 
-// Helper function to add delay for clipboard synchronization
+// ============ PERFORMANCE MONITORING ============
+let processSpawnLog = [];
+let processSpawnCount = 0;
+let lastLogDump = Date.now();
+const LOG_DUMP_INTERVAL = 10000; // Dump log every 10 seconds
+
+function LogProcessSpawn(scriptName, context) {
+	const now = Date.now();
+	processSpawnCount++;
+	const entry = {
+		timestamp: new Date().toISOString(),
+		script: scriptName,
+		context: context,
+		count: processSpawnCount
+	};
+	processSpawnLog.push(entry);
+	
+	// Keep only last 100 entries
+	if (processSpawnLog.length > 100) {
+		processSpawnLog.shift();
+	}
+	
+	// Periodically dump stats to console
+	if (now - lastLogDump > LOG_DUMP_INTERVAL) {
+		const elapsed = (now - lastLogDump) / 1000;
+		const spawnRate = (processSpawnLog.length / LOG_DUMP_INTERVAL * 1000).toFixed(1);
+		console.log(`[PERF] Process spawns in last ${(elapsed).toFixed(0)}s: ${processSpawnLog.length} | Rate: ${spawnRate}/sec`);
+		lastLogDump = now;
+	}
+	
+	// Warn if spawn rate is excessive (more than 10/sec)
+	if (processSpawnLog.filter(e => now - new Date(e.timestamp) < 1000).length > 10) {
+		console.warn(`⚠️  HIGH PROCESS SPAWN RATE DETECTED! (${processSpawnLog.filter(e => now - new Date(e.timestamp) < 1000).length}/sec)`);
+	}
+}
+
+// Helper function for controlled delays
 function pause(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// ============ DATABASE INITIALIZATION ============
+
+function InitializeDatabase() {
+	return new Promise((resolve, reject) => {
+		db = new sqlite3.Database(DB_PATH, (err) => {
+			if (err) {
+				console.error("Database error:", err);
+				reject(err);
+				return;
+			}
+			console.log("Database connected at:", DB_PATH);
+			
+			db.serialize(() => {
+				// Create tables
+				db.run(`CREATE TABLE IF NOT EXISTS game_status (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+					data_json TEXT NOT NULL
+				)`);
+
+				db.run(`CREATE TABLE IF NOT EXISTS game_infos (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+					data_json TEXT NOT NULL
+				)`);
+
+				db.run(`CREATE TABLE IF NOT EXISTS job_infos (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+					data_json TEXT NOT NULL
+				)`);
+
+				db.run(`CREATE TABLE IF NOT EXISTS stocks (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+					data_json TEXT NOT NULL
+				)`);
+
+				// Create cleanup triggers - keep last 2000 entries AND entries from last 7 days
+				// game_status: delete old entries
+				db.run(`CREATE TRIGGER IF NOT EXISTS cleanup_game_status
+					AFTER INSERT ON game_status
+					BEGIN
+						DELETE FROM game_status WHERE id NOT IN (
+							SELECT id FROM game_status ORDER BY timestamp DESC LIMIT 2000
+						) AND timestamp < datetime('now', '-7 days');
+					END`);
+
+				// game_infos: delete old entries (static data, but keep history)
+				db.run(`CREATE TRIGGER IF NOT EXISTS cleanup_game_infos
+					AFTER INSERT ON game_infos
+					BEGIN
+						DELETE FROM game_infos WHERE id NOT IN (
+							SELECT id FROM game_infos ORDER BY timestamp DESC LIMIT 2000
+						) AND timestamp < datetime('now', '-7 days');
+					END`);
+
+				// job_infos: delete old entries
+				db.run(`CREATE TRIGGER IF NOT EXISTS cleanup_job_infos
+					AFTER INSERT ON job_infos
+					BEGIN
+						DELETE FROM job_infos WHERE id NOT IN (
+							SELECT id FROM job_infos ORDER BY timestamp DESC LIMIT 2000
+						) AND timestamp < datetime('now', '-7 days');
+					END`);
+
+				// stocks: aggressive cleanup - keep only last 1000 entries (changes frequently)
+				db.run(`CREATE TRIGGER IF NOT EXISTS cleanup_stocks
+					AFTER INSERT ON stocks
+					BEGIN
+						DELETE FROM stocks WHERE id NOT IN (
+							SELECT id FROM stocks ORDER BY timestamp DESC LIMIT 1000
+						) AND timestamp < datetime('now', '-3 days');
+					END`, (err) => {
+						if (err) {
+							console.error("Trigger creation error:", err);
+							reject(err);
+						} else {
+							console.log("Database tables and triggers initialized successfully");
+							resolve();
+						}
+					});
+			});
+		});
+	});
+}
+
+// DB Write/Read helpers
+function InsertGameStatus(data) {
+	return new Promise((resolve, reject) => {
+		if (!db) reject(new Error("Database not initialized"));
+		db.run("INSERT INTO game_status (data_json) VALUES (?)", [JSON.stringify(data)], function(err) {
+			if (err) reject(err);
+			else resolve(this.lastID);
+		});
+	});
+}
+
+function InsertGameInfos(data) {
+	return new Promise((resolve, reject) => {
+		if (!db) reject(new Error("Database not initialized"));
+		db.run("INSERT INTO game_infos (data_json) VALUES (?)", [JSON.stringify(data)], function(err) {
+			if (err) reject(err);
+			else resolve(this.lastID);
+		});
+	});
+}
+
+function InsertJobInfos(data) {
+	return new Promise((resolve, reject) => {
+		if (!db) reject(new Error("Database not initialized"));
+		db.run("INSERT INTO job_infos (data_json) VALUES (?)", [JSON.stringify(data)], function(err) {
+			if (err) reject(err);
+			else resolve(this.lastID);
+		});
+	});
+}
+
+function InsertStocks(data) {
+	return new Promise((resolve, reject) => {
+		if (!db) reject(new Error("Database not initialized"));
+		db.run("INSERT INTO stocks (data_json) VALUES (?)", [JSON.stringify(data)], function(err) {
+			if (err) reject(err);
+			else resolve(this.lastID);
+		});
+	});
+}
+
+function GetLatestGameStatus() {
+	return new Promise((resolve, reject) => {
+		if (!db) reject(new Error("Database not initialized"));
+		db.get("SELECT data_json FROM game_status ORDER BY timestamp DESC LIMIT 1", (err, row) => {
+			if (err) reject(err);
+			else resolve(row ? JSON.parse(row.data_json) : null);
+		});
+	});
+}
+
+function GetLatestGameInfos() {
+	return new Promise((resolve, reject) => {
+		if (!db) reject(new Error("Database not initialized"));
+		db.get("SELECT data_json FROM game_infos ORDER BY timestamp DESC LIMIT 1", (err, row) => {
+			if (err) reject(err);
+			else resolve(row ? JSON.parse(row.data_json) : null);
+		});
+	});
+}
+
+function GetLatestJobInfos() {
+	return new Promise((resolve, reject) => {
+		if (!db) reject(new Error("Database not initialized"));
+		db.get("SELECT data_json FROM job_infos ORDER BY timestamp DESC LIMIT 1", (err, row) => {
+			if (err) reject(err);
+			else resolve(row ? JSON.parse(row.data_json) : null);
+		});
+	});
+}
+
+function GetLatestStocks() {
+	return new Promise((resolve, reject) => {
+		if (!db) reject(new Error("Database not initialized"));
+		db.get("SELECT data_json FROM stocks ORDER BY timestamp DESC LIMIT 1", (err, row) => {
+			if (err) reject(err);
+			else resolve(row ? JSON.parse(row.data_json) : null);
+		});
+	});
 }
 
 var missingDFHackError = {
@@ -108,9 +315,18 @@ function GetMissingDFHackError(context) {
 
 app.whenReady().then(async () => {
 
-    //read config file if exists
-    await ReadConfig();
-    await CreateWindow();
+	//read config file if exists
+	await ReadConfig();
+	
+	// Initialize database
+	try {
+		await InitializeDatabase();
+	} catch (err) {
+		console.error("Failed to initialize database:", err);
+		// Continue anyway - app can still function with stdout data extraction
+	}
+	
+	await CreateWindow();
 
     mainWindow.webContents.once('did-finish-load', () => {
         mainWindow.setTitle("DF-Pom | v" + version);
@@ -153,7 +369,6 @@ app.whenReady().then(async () => {
 ipcMain.handle("GetFileHandle", async () => {
     return config.ordersFilePath;
 });
-
 
 async function ReadConfig() {
     if (fs.existsSync(CONFIG_PATH)) {
@@ -256,10 +471,10 @@ async function SetPath() {
     return true;
 }
 
-function parseClipboardData(rawData) {
-    // Check if clipboard is empty
+function parseJsonData(rawData) {
+    // Parse JSON data from stdout
     if (!rawData || rawData.trim() === "") {
-        throw new Error("Clipboard is empty - DFHack Lua script did not write data. Is Dwarf Fortress running?");
+        throw new Error("No data received from DFHack. Is Dwarf Fortress running?");
     }
     
     // Check for stock data format first (more specific)
@@ -273,7 +488,7 @@ function parseClipboardData(rawData) {
         rawData = rawData.replace(/(,)+]/g, "]");
         return JSON.parse(rawData);
     } catch (e) {
-        throw new Error("Data is neither valid JSON nor stock format: " + e.message);
+        throw new Error("Data is not valid JSON: " + e.message);
     }
 }
 
@@ -289,6 +504,8 @@ ipcMain.handle("GetGameStatus", async (e) => {
 
         let luaScriptPath = path.join(GetDataPath(), "lua", "gameStatus.lua");
         let args = ["lua", "-f", luaScriptPath];
+        
+        LogProcessSpawn("gameStatus.lua", "GetGameStatus");
 
         fs.access(dfhackPath, fs.constants.F_OK | fs.constants.X_OK, (err) => {
             if (err) {
@@ -296,11 +513,8 @@ ipcMain.handle("GetGameStatus", async (e) => {
                 return;
             }
 
-            var oldClipboard = clipboard.readText();
             execFile(dfhackPath, args, async (error, stdout, stderr) => {
-                await pause(200);
-                
-                // Try to extract data from stdout first (marked with DFPOM_STATUS_JSON:)
+                // Extract data from stdout (marked with DFPOM_STATUS_JSON:)
                 let data = null;
                 if (stdout && stdout.includes("DFPOM_STATUS_JSON:")) {
                     let lines = stdout.split("\n");
@@ -311,13 +525,6 @@ ipcMain.handle("GetGameStatus", async (e) => {
                         }
                     }
                 }
-                
-                // If not in stdout, try clipboard
-                if (!data) {
-                    data = clipboard.readText();
-                }
-                
-                clipboard.writeText(oldClipboard);
 
                 if (error) {
                     data = {
@@ -335,13 +542,18 @@ ipcMain.handle("GetGameStatus", async (e) => {
                 }
 
                 try {
+                    data = parseJsonData(data);
                     
-                    data = parseClipboardData(data);
+                    // Write to database if successful
+                    if (data && !data.error) {
+                        InsertGameStatus(data).catch(err => console.error("DB write error (game_status):", err));
+                    }
+                    
                     resolve(data);
 
                 } catch (e) {
-                    // If clipboard is empty, it means DF isn't running - return waiting status instead of error
-                    if (e.message.includes("Clipboard is empty")) {
+                    // If no data available, return waiting status instead of error
+                    if (!data) {
                         data = {
                             isFortress: false,
                             site: "nil",
@@ -412,7 +624,6 @@ ipcMain.handle("GetGameInfos", async (e) => {
                 return;
             }
 
-            var oldClipboard = clipboard.readText();
             execFile(dfhackPath, args, async (error, stdout, stderr) => {
                 await pause(200);
                 if (error) {
@@ -430,7 +641,7 @@ ipcMain.handle("GetGameInfos", async (e) => {
                 }
 
                 try {
-                    // Try to extract data from stdout first (marked with DFPOM_GAMEINFO_JSON:)
+                    // Extract data from stdout (marked with DFPOM_GAMEINFO_JSON:)
                     let data = null;
                     if (stdout && stdout.includes("DFPOM_GAMEINFO_JSON:")) {
                         let lines = stdout.split("\n");
@@ -442,19 +653,19 @@ ipcMain.handle("GetGameInfos", async (e) => {
                         }
                     }
                     
-                    // If not in stdout, try clipboard
-                    if (!data) {
-                        data = clipboard.readText();
+                    // Parse JSON data (remove ",}" and "," ]" artifacts)
+                    data = parseJsonData(data);
+                    
+                    // Write to database if successful
+                    if (data && !data.error) {
+                        InsertGameInfos(data).catch(err => console.error("DB write error (game_infos):", err));
                     }
                     
-                    clipboard.writeText(oldClipboard);
-                    //replace ",}" with "}" to fix invalid JSON
-                    data = parseClipboardData(data);
                     resolve(data);
 
                 } catch (e) {
-                    // If clipboard is empty, return "wait" instead of error to avoid triggering reset
-                    if (e.message.includes("Clipboard is empty")) {
+                    // If no data available, return "wait" instead of error to avoid triggering reset
+                    if (!data) {
                         resolve("wait");
                         return;
                     }
@@ -514,9 +725,7 @@ ipcMain.handle("GetJobsInfos", async () => {
                 return;
             }
 
-            var oldClipboard = clipboard.readText();
             execFile(dfhackPath, args, async (error, stdout, stderr) => {
-                await pause(50);
                 if (error) {
                     data = {
                         error: {
@@ -532,7 +741,7 @@ ipcMain.handle("GetJobsInfos", async () => {
                 }
 
                 try {
-                    // Try to extract data from stdout first (marked with DFPOM_JOBINFOS_JSON:)
+                    // Extract data from stdout (marked with DFPOM_JOBINFOS_JSON:)
                     let data = null;
                     if (stdout && stdout.includes("DFPOM_JOBINFOS_JSON:")) {
                         let lines = stdout.split("\n");
@@ -544,14 +753,6 @@ ipcMain.handle("GetJobsInfos", async () => {
                         }
                     }
                     
-                    // If not in stdout, try clipboard
-                    if (!data) {
-                        data = clipboard.readText();
-                        cl("[GetJobsInfos] Clipboard: " + (data ? data.length + " chars" : "EMPTY"));
-                    }
-                    
-                    clipboard.writeText(oldClipboard);
-
                     data = data.replace(/,}/g, "}");
                     data = data.replace(/,]/g, "]");
 
@@ -570,6 +771,10 @@ ipcMain.handle("GetJobsInfos", async () => {
                         return;
                     }
                     jobsInfosStartIndex = data.pauseAtIndex;
+                    
+                    // Write to database if successful
+                    InsertJobInfos(data).catch(err => console.error("DB write error (job_infos):", err));
+                    
                     resolve(data);
 
                 } catch (e) {
@@ -613,6 +818,8 @@ ipcMain.handle("GetStocks", async () => {
         fs.writeFileSync(luaScriptPath, luaScriptContent, "utf-8");
 
         let args = ["lua", "-f", luaScriptPath];
+        
+        LogProcessSpawn("exportStocks.lua", "GetStocks");
 
         fs.access(dfhackPath, fs.constants.F_OK | fs.constants.X_OK, (err) => {
             if (err) {
@@ -620,9 +827,7 @@ ipcMain.handle("GetStocks", async () => {
                 return;
             }
 
-            var oldClipboard = clipboard.readText();
             execFile(dfhackPath, args, async (error, stdout, stderr) => {
-                await pause(50);
                 if (error) {
                     data = {
                         error: {
@@ -638,25 +843,19 @@ ipcMain.handle("GetStocks", async () => {
                 }
 
                 try {
-                    // Try to extract data from stdout first (marked with DFPOM_STOCKS:)
-                    let rawClipboard = null;
+                    // Extract data from stdout (marked with DFPOM_STOCKS:)
+                    let rawData = null;
                     if (stdout && stdout.includes("DFPOM_STOCKS:")) {
                         let lines = stdout.split("\n");
                         for (let line of lines) {
                             if (line.includes("DFPOM_STOCKS:")) {
-                                rawClipboard = line.substring(line.indexOf("DFPOM_STOCKS:") + "DFPOM_STOCKS:".length).trim();
+                                rawData = line.substring(line.indexOf("DFPOM_STOCKS:") + "DFPOM_STOCKS:".length).trim();
                                 break;
                             }
                         }
                     }
                     
-                    // If not in stdout, try clipboard
-                    if (!rawClipboard) {
-                        rawClipboard = clipboard.readText();
-                    }
-                    
-                    let data = ProcessStockData(rawClipboard)
-                    clipboard.writeText(oldClipboard);
+                    let data = ProcessStockData(rawData)
                     if (Object.keys(data.stocks).length == 0) {
                         data = {
                             error: {
@@ -671,11 +870,15 @@ ipcMain.handle("GetStocks", async () => {
                         resolve(data);
                         return;
                     }
+                    
+                    // Write to database if successful
+                    InsertStocks(data).catch(err => console.error("DB write error (stocks):", err));
+                    
                     resolve(data);
 
                 } catch (e) {
-                    // If clipboard is empty, return "wait" instead of error/reject
-                    if (e.message.includes("Clipboard is empty")) {
+                    // If no data available, return "wait" instead of error/reject
+                    if (e.message.includes("No data received")) {
                         readingStuff = false;
                         resolve("wait");
                         return;
@@ -713,6 +916,8 @@ ipcMain.handle("ReadOrdersFile", async () => {
     readingStuff = true;
 
     cl("Reading orders file...");
+    
+    LogProcessSpawn("orders-export", "ReadOrdersFile");
 
     return new Promise((resolve, reject) => {
         var pathError = GetPathsReadyError();
@@ -785,6 +990,8 @@ async function SendToDF() {
         return "wait"
 
     readingStuff = true;
+    
+    LogProcessSpawn("orders-import", "SendToDF");
 
     var pathError = GetPathsReadyError();
     if (pathError) {

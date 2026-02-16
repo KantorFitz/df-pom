@@ -5980,7 +5980,6 @@ function SaveSetting(name, value) {
     SaveConfig();
 }
 
-
 function CreateGraph(key, maxValue = null) {
     if (graphBoxes[key])
         return graphBoxes[key];
