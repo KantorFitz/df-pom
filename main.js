@@ -242,6 +242,9 @@ async function SetPath() {
     if (canceled || filePaths.length == 0)
         return false;
 
+    config.dwarfPath = canceled ? null : filePaths[0];
+    config.ordersFilePath = path.join(config.dwarfPath, "dfhack-config", "orders", ORDERS_NAME);
+
     cl("Selected DFHack path: " + filePaths[0]);
     var pathError = GetPathsReadyError();
     if (pathError) {
@@ -250,8 +253,6 @@ async function SetPath() {
         return;
     }
 
-    config.dwarfPath = canceled ? null : filePaths[0];
-    config.ordersFilePath = path.join(config.dwarfPath, "dfhack-config", "orders", ORDERS_NAME);
     await SaveConfig();
     return true;
 }
@@ -873,13 +874,13 @@ function GetPathsReadyError() {
     var requiredFile = path.join(config.dwarfPath, DwarfFortressExeName());
     if (!fs.existsSync(requiredFile)) {
         cl(DwarfFortressExeName() + " not found in " + config.dwarfPath);
-        return GetMissingDFHackError("Paths1 (missing '" + DwarfFortressExeName() + "')");
+        return GetMissingDFHackError("Paths1 (missing '" + DwarfFortressExeName() + "' in " + config.dwarfPath + ")");
     }
 
     requiredFile = path.join(config.dwarfPath, DFHackRunName());
     if (!fs.existsSync(requiredFile)) {
         cl(DFHackRunName() + " not found in " + config.dwarfPath);
-        return GetMissingDFHackError("Paths2 (missing '" + DFHackRunName() + "')");
+        return GetMissingDFHackError("Paths2 (missing '" + DFHackRunName() + "' in " + config.dwarfPath + ")");
     }
 
     return null;
