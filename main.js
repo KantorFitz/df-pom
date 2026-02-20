@@ -414,7 +414,8 @@ ipcMain.handle("GetGameStatus", async (e) => {
                             context: "GetGameStatus2 code:" + (error.code || '') + " signal:" + (error.signal || ''),
                             buttons: ["WAIT"],
                             errorObj: { error: error, stdout: stdout, stderr: stderr },
-                            prout: "rp: "+process.resourcesPath + " / ep: " + process.execPath + " / dn: " + __dirname
+                            prout: "rp: "+process.resourcesPath + " / ep: " + process.execPath + " / dn: " + __dirname,
+                            args: args
                         }
                     };
                     cl(data);
@@ -1122,7 +1123,7 @@ function GetDataPath() {
     if (!app.isPackaged)
         return __dirname;
 
-    return process.resourcesPath || path.join(path.dirname(process.execPath), "resources");
+    return process.resourcesPath;
 }
 
 function DwarfFortressExeName() {
