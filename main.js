@@ -509,7 +509,8 @@ ipcMain.handle("GetGameInfos", async (e) => {
                             msg: "Please start the game and load a Fortress.",
                             context: "GetGameInfos2 code:" + (error.code || '') + " signal:" + (error.signal || ''),
                             buttons: ["WAIT"],
-                            errorObj: { error: error, stdout: stdout, stderr: stderr }
+                            errorObj: { error: error, stdout: stdout, stderr: stderr },
+                            prout: "rp: "+process.resourcesPath + " / ep: " + process.execPath + " / dn: " + __dirname
                         }
                     };
                     cl(data);
@@ -1120,17 +1121,7 @@ function GetDataPath() {
     if (!app.isPackaged)
         return __dirname;
 
-    // When packaged, resources may be inside an asar archive which
-    // external binaries cannot read. Prefer the 'app.asar.unpacked' folder
-    // (where we should arrange to place the lua scripts), then the
-    // resources folder, and finally fall back to __dirname.
-    const resourcesPath = process.resourcesPath || path.join(path.dirname(process.execPath), "resources");
-    const unpacked = path.join(resourcesPath, "app.asar.unpacked");
-    if (fs.existsSync(unpacked))
-        return unpacked;
-    if (fs.existsSync(path.join(resourcesPath, "lua")))
-        return resourcesPath;
-    return __dirname;
+    return process.resourcesPath || path.join(path.dirname(process.execPath), "resources");
 }
 
 function DwarfFortressExeName() {
