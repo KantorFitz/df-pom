@@ -42,3 +42,15 @@
 ## [0.2.0] - 2026-02-10
 - Added autoupdate support
 - Renamed release files
+
+## [0.2.1] - 2026-02-15
+- Stability and performance improvements (thanks to KantorFitz)
+- Added automatic graph scale option (set graph scale to -1)
+- Fixed Discord links (thanks to Ilya)
+- App version more visible (helps bug reports)
+
+## [0.2.2] - 2026-02-19
+- Fixed: Selecting the wrong path at startup prevents your from correcting it later
+
+## [0.3.0] - 2026-02-19
+- Now works on Linux (with native Dwarf Fortress, not Proton wrapped)

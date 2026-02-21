@@ -6095,13 +6095,12 @@ function DrawGraph(key) {
     //prepend history with -1 values if history is shorter than graphsSpan
     let length = GetGraphsSpan();
     let drawnPoints = Array.from(sHisto);
-    while (drawnPoints.length < length) {
+    while (drawnPoints.length < length)
         drawnPoints.unshift(-10);
-    }
+
     //remove old points if history is longer than graphsSpan
-    while (drawnPoints.length > length) {
+    while (drawnPoints.length > length)
         drawnPoints.shift();
-    }
 
     var graphDiv = graphBoxes[key];
     let max = graph.max;
@@ -6251,3 +6250,7 @@ function Interpolate(min, max, ratio) {
 window.api.UpdateAvailable(() => {
     $(".updateInfo")[0].classList.remove("hidden");
 });
+
+async function ResetPath() {
+     result = await window.api.SetDFHackPath();
+}

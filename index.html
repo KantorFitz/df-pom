@@ -319,6 +319,7 @@
 								<div>Click the graph name to <b>find</b> orders/stocks associated with it</div>
 								<div>CTRL/SHIFT+Click to <b>remove</b> the graph</div>
 								<div>Change the <b>graph scale</b> by setting the max value in the top right corner</div>
+								<div>Set the scale value to -1 for automatic scaling</div>
 								<div>Dashed lines indicates that the graph values goes beyond the max value</div>
 								<div>Change the graphs size and other parameters in the settings tab</div>
 							</div>
@@ -339,6 +340,13 @@
 						<div>
 							<input type="checkbox" id="config_autoUpdate" onchange="SaveSetting('autoUpdate',this.checked)" />
 							<span>Check for updates automatically when the app starts</span>
+						</div>
+					</div>
+					<div class="setting">
+						<p>Change DF path</p>
+						<div>
+							<button onclick="ResetPath()">Set DF Path</button>
+							<span>Must point to where Dwarf Fortress + DF Hack are installed</span>
 						</div>
 					</div>
 					<h2>Orders</h2>
@@ -673,7 +681,7 @@
 			<div class="infos">
 				<div><b>DFPOM <ver></ver></b> - <b>D</b>warf <b>F</b>ortress <b>P</b>roduction <b>O</b>rders <b>M</b>anager</div>
 				<div>Licensed under the Creative Commons Attribution-NonCommercial 4.0 International License.</div>
-				<div>By Yatta/Albino - Discord: yattaalbino - <a onclick="OpenLink('mailto:mappa.yatta@gmail.com')">mappa.yatta@gmail.com</a></div>
+				<div>By Yatta/Albino - <a href='https://discord.gg/VgRNVdd3UB'>Discord</a>: yattaalbino - <a onclick="OpenLink('mailto:mappa.yatta@gmail.com')">mappa.yatta@gmail.com</a></div>
 				<div>Git: <a onclick="OpenLink('https://github.com/GitAlbino/df-pom')">GitAlbino/df-pom</a></div>
 				<div>Huge thanks to the DFHack team for their work, and to the DFHack community/discord (SilasD, Quietust, rome of oxtrot...) for their patient, reactive and insightful help.</div>
 				<div>Background illustration by AI :|</div>
@@ -694,7 +702,7 @@
 			<ver></ver>
 		</div>
 		<div>
-			| <a onclick="OpenLink('https://discord.gg/XXUqPFrY')"><b>DF-Pom Discord</b> for help/suggestions</a>
+			| <a onclick="OpenLink('https://discord.gg/VgRNVdd3UB')"><b>DF-Pom Discord</b> for help/suggestions</a>
 		</div>
 
 	</div>

@@ -1,7 +1,7 @@
 {
   "name": "dwarf-fortress-production-order-manager",
   "productName": "DF-Pom",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Production order manager for Dwarf Fortress",
   "main": "main.js",
   "scripts": {
@@ -55,6 +55,7 @@
     "electron-updater": "^6.7.3",
     "fuse.js": "^7.1.0",
     "node": "^20.19.6",
+    "node-pty": "^1.0.0",
     "sqlite3": "^5.1.7"
   }
 }
